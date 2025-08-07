@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在线Markdown编辑器</title>
+    
+    <!-- External Dependencies -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-light.min.css">
+    
+    <!-- KaTeX Dependencies (Corrected Integrity Hash) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" xintegrity="sha384-n8MVd4RsNIU0tAv4ct0nTaAbDJwPJzDEaqSD1odI+WdtXRGWt2kTvGFasHpSy3SV" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" xintegrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzUOEleOLALmuqehneUG+vnGctmUb0ZY0l8" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" xintegrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax56Z4dCRWbxyPt0Koah1uHoK0o4+/RRE05" crossorigin="anonymous"></script>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="editor-container">
+        <!-- Toolbar -->
+        <div class="toolbar">
+            <!-- File Operations -->
+            <button onclick="newFile()" class="toolbar-btn">📄 新建</button>
+            <button onclick="importFile()" class="toolbar-btn">📁 导入</button>
+            <button onclick="exportFile()" class="toolbar-btn">💾 导出</button>
+            <input type="file" id="fileInput" accept=".md,.markdown" style="display: none;" onchange="handleFileImport(event)">
+            
+            <div class="toolbar-separator"></div>
+            
+            <!-- Edit Operations -->
+            <button onclick="undo()" class="toolbar-btn">↶ 撤销</button>
+            <button onclick="redo()" class="toolbar-btn">↷ 重做</button>
+            
+            <div class="toolbar-separator"></div>
+            
+            <!-- Formatting -->
+            <button onclick="insertBold()" class="toolbar-btn font-bold">B</button>
+            <button onclick="insertItalic()" class="toolbar-btn italic">I</button>
+            <button onclick="insertStrikethrough()" class="toolbar-btn line-through">S</button>
+            <button onclick="insertHighlight()" class="toolbar-btn highlight-btn">H</button>
+            
+            <div class="toolbar-separator"></div>
+            
+            <!-- Headers -->
+            <select onchange="insertHeading(this.value); this.value=''" class="toolbar-select">
+                <option value="">标题</option>
+                <option value="1">H1</option>
+                <option value="2">H2</option>
+                <option value="3">H3</option>
+                <option value="4">H4</option>
+                <option value="5">H5</option>
+                <option value="6">H6</option>
+            </select>
+            
+            <div class="toolbar-separator"></div>
+            
+            <!-- Insert Elements -->
+            <button onclick="insertLink()" class="toolbar-btn">🔗 链接</button>
+            <button onclick="insertImage()" class="toolbar-btn">🖼️ 图片</button>
+            <button onclick="insertTable()" class="toolbar-btn">📊 表格</button>
+            <button onclick="insertCode()" class="toolbar-btn">💻 代码</button>
+            <button onclick="insertMath()" class="toolbar-btn">📐 公式</button>
+            <button onclick="insertQuote()" class="toolbar-btn">💬 引用</button>
+            <button onclick="insertTOC()" class="toolbar-btn">📑 目录</button>
+            
+            <div class="toolbar-separator"></div>
+            
+            <!-- Lists -->
+            <button onclick="insertUnorderedList()" class="toolbar-btn">• 无序</button>
+            <button onclick="insertOrderedList()" class="toolbar-btn">1. 有序</button>
+            <button onclick="insertTaskList()" class="toolbar-btn">☑️ 任务</button>
+            
+            <div class="toolbar-separator"></div>
+            
+            <!-- Others -->
+            <button onclick="insertHorizontalRule()" class="toolbar-btn">分隔线</button>
+            
+            <!-- Font Size Controls -->
+            <div class="font-controls">
+                <span class="font-label">字体:</span>
+                <button onclick="decreaseFontSize()" class="font-size-btn">-</button>
+                <span id="fontSizeDisplay" class="font-size-display">14px</span>
+                <button onclick="increaseFontSize()" class="font-size-btn">+</button>
+            </div>
+        </div>
+        
+        <!-- Main Content -->
+        <div id="mainContent" class="main-content">
+            <!-- Preview Pane -->
+            <div id="previewPane" class="preview-pane">
+                <div id="preview" class="markdown-preview"></div>
+            </div>
+            
+            <!-- Resizer -->
+            <div id="resizer" class="resizer"></div>
+            
+            <!-- Editor Pane -->
+            <div id="editorPane" class="editor-pane">
+                <textarea id="editor" class="editor-textarea" placeholder="在此输入 Markdown 内容..."></textarea>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script src="script.js"></script>
+</body>
+</html>
