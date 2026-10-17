@@ -1,0 +1,176 @@
+/* ==========================================================================
+   Source editor
+   A transparent <textarea> sits on top of a highlighted backdrop that
+   mirrors its text line by line (line numbers, syntax colours, current
+   line). Both layers must share exactly the same text metrics.
+   ========================================================================== */
+
+.code-editor {
+    --digits: 2;
+    --gutter: calc(var(--digits) * 1ch + 38px);
+    --pad-right: 20px;
+    --scrollbar: 0px;
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.code-backdrop,
+.code-input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    border: 0;
+    padding-top: 14px;
+    padding-bottom: 28px;
+    font-family: var(--font-mono);
+    font-size: var(--editor-font-size);
+    font-weight: 400;
+    line-height: var(--editor-line-height);
+    letter-spacing: normal;
+    word-spacing: normal;
+    tab-size: 4;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: normal;
+    text-align: left;
+    text-indent: 0;
+    text-transform: none;
+    font-kerning: none;
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "calt" 0;
+    /* Never fake bold/italic: synthetic glyphs can change advance widths
+       and push the highlighted text out of line with the caret. */
+    font-synthesis: none;
+}
+
+.code-backdrop {
+    padding-left: 0;
+    padding-right: 0;
+    /* Extra room so the backdrop can always scroll as far as the textarea */
+    padding-bottom: calc(28px + 50vh);
+    overflow: hidden;
+    pointer-events: none;
+    color: var(--text-control);
+    counter-reset: line;
+}
+
+.code-input {
+    width: 100%;
+    height: 100%;
+    padding-left: var(--gutter);
+    padding-right: var(--pad-right);
+    overflow-x: hidden;
+    overflow-y: auto;
+    resize: none;
+    outline: none;
+    background: transparent;
+    color: transparent;
+    caret-color: var(--text);
+    -webkit-text-fill-color: transparent;
+}
+
+.code-input::placeholder {
+    color: var(--faint);
+    -webkit-text-fill-color: var(--faint);
+}
+
+.code-input::selection {
+    background: var(--selection);
+    color: transparent;
+}
+
+.code-input:focus-visible {
+    outline: none;
+}
+
+.ln {
+    position: relative;
+    padding-left: var(--gutter);
+    padding-right: calc(var(--pad-right) + var(--scrollbar));
+    counter-increment: line;
+}
+
+.ln::before {
+    content: counter(line);
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--gutter);
+    padding-right: 18px;
+    box-sizing: border-box;
+    text-align: right;
+    color: var(--faint);
+    font-weight: 400;
+    font-style: normal;
+}
+
+.code-editor:focus-within .ln.is-current {
+    background: var(--accent-soft);
+}
+
+.code-editor:focus-within .ln.is-current::before {
+    color: var(--text-control);
+}
+
+/* iOS Safari indents textarea text by 3px */
+.is-ios .ln {
+    padding-left: calc(var(--gutter) + 3px);
+    padding-right: calc(var(--pad-right) + var(--scrollbar) + 3px);
+}
+
+/* --- Markdown syntax colours -------------------------------------------- */
+
+.t-mark {
+    color: var(--faint);
+}
+
+.t-heading {
+    font-weight: 500;
+    color: var(--text-strong);
+}
+
+.t-bold {
+    font-weight: 600;
+}
+
+.t-italic {
+    font-style: italic;
+}
+
+.t-strike {
+    text-decoration: line-through;
+}
+
+.t-hl {
+    background: var(--mark-bg);
+    color: var(--mark-fg);
+    border-radius: 3px;
+}
+
+.t-code,
+.t-lang,
+.t-string {
+    color: var(--warm);
+}
+
+.t-math,
+.t-accent {
+    color: var(--accent);
+}
+
+.t-url {
+    color: var(--muted);
+    text-decoration: underline;
+    text-decoration-color: var(--dot);
+    text-underline-offset: 2px;
+}
+
+.t-comment {
+    color: var(--muted);
+}
+
+.t-html {
+    color: var(--muted);
+}

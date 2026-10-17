@@ -3,109 +3,286 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
     <title>在线Markdown编辑器</title>
-    
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' rx='11' fill='%2314191B'/%3E%3Ctext x='18' y='23.5' font-family='Arial,sans-serif' font-size='15' font-weight='700' fill='white' text-anchor='middle'%3Emd%3C/text%3E%3C/svg%3E">
+
+    <!-- Apply the saved (or system) theme before first paint -->
+    <script>
+        (function () {
+            var theme = null;
+            try { theme = JSON.parse(localStorage.getItem('mde:theme')); } catch (e) {}
+            if (theme !== 'light' && theme !== 'dark') {
+                theme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            }
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
+
+    <!-- Fonts: loaded without blocking render; system fonts are used until (or if) they arrive -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap" media="print" onload="this.media='all'">
+
     <!-- External Dependencies -->
-    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-light.min.css">
-    
-    <!-- KaTeX Dependencies (Corrected Integrity Hash) -->
+
+    <!-- KaTeX Dependencies -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" xintegrity="sha384-n8MVd4RsNIU0tAv4ct0nTaAbDJwPJzDEaqSD1odI+WdtXRGWt2kTvGFasHpSy3SV" crossorigin="anonymous">
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" xintegrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzUOEleOLALmuqehneUG+vnGctmUb0ZY0l8" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" xintegrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax56Z4dCRWbxyPt0Koah1uHoK0o4+/RRE05" crossorigin="anonymous"></script>
-    
-    <!-- Custom CSS -->
-    <link rel="stylesheet" href="styles.css">
+
+    <!-- App styles -->
+    <link rel="stylesheet" href="assets/css/tokens.css">
+    <link rel="stylesheet" href="assets/css/base.css">
+    <link rel="stylesheet" href="assets/css/layout.css">
+    <link rel="stylesheet" href="assets/css/menus.css">
+    <link rel="stylesheet" href="assets/css/editor.css">
+    <link rel="stylesheet" href="assets/css/preview.css">
 </head>
 <body>
-    <div class="editor-container">
-        <!-- Toolbar -->
-        <div class="toolbar">
-            <!-- File Operations -->
-            <button onclick="newFile()" class="toolbar-btn">📄 新建</button>
-            <button onclick="importFile()" class="toolbar-btn">📁 导入</button>
-            <button onclick="exportFile()" class="toolbar-btn">💾 导出</button>
-            <input type="file" id="fileInput" accept=".md,.markdown" style="display: none;" onchange="handleFileImport(event)">
-            
-            <div class="toolbar-separator"></div>
-            
-            <!-- Edit Operations -->
-            <button onclick="undo()" class="toolbar-btn">↶ 撤销</button>
-            <button onclick="redo()" class="toolbar-btn">↷ 重做</button>
-            
-            <div class="toolbar-separator"></div>
-            
-            <!-- Formatting -->
-            <button onclick="insertBold()" class="toolbar-btn font-bold">B</button>
-            <button onclick="insertItalic()" class="toolbar-btn italic">I</button>
-            <button onclick="insertStrikethrough()" class="toolbar-btn line-through">S</button>
-            <button onclick="insertHighlight()" class="toolbar-btn highlight-btn">H</button>
-            
-            <div class="toolbar-separator"></div>
-            
-            <!-- Headers -->
-            <select onchange="insertHeading(this.value); this.value=''" class="toolbar-select">
-                <option value="">标题</option>
-                <option value="1">H1</option>
-                <option value="2">H2</option>
-                <option value="3">H3</option>
-                <option value="4">H4</option>
-                <option value="5">H5</option>
-                <option value="6">H6</option>
-            </select>
-            
-            <div class="toolbar-separator"></div>
-            
-            <!-- Insert Elements -->
-            <button onclick="insertLink()" class="toolbar-btn">🔗 链接</button>
-            <button onclick="insertImage()" class="toolbar-btn">🖼️ 图片</button>
-            <button onclick="insertTable()" class="toolbar-btn">📊 表格</button>
-            <button onclick="insertCode()" class="toolbar-btn">💻 代码</button>
-            <button onclick="insertMath()" class="toolbar-btn">📐 公式</button>
-            <button onclick="insertQuote()" class="toolbar-btn">💬 引用</button>
-            <button onclick="insertTOC()" class="toolbar-btn">📑 目录</button>
-            
-            <div class="toolbar-separator"></div>
-            
-            <!-- Lists -->
-            <button onclick="insertUnorderedList()" class="toolbar-btn">• 无序</button>
-            <button onclick="insertOrderedList()" class="toolbar-btn">1. 有序</button>
-            <button onclick="insertTaskList()" class="toolbar-btn">☑️ 任务</button>
-            
-            <div class="toolbar-separator"></div>
-            
-            <!-- Others -->
-            <button onclick="insertHorizontalRule()" class="toolbar-btn">分隔线</button>
-            
-            <!-- Font Size Controls -->
-            <div class="font-controls">
-                <span class="font-label">字体:</span>
-                <button onclick="decreaseFontSize()" class="font-size-btn">-</button>
-                <span id="fontSizeDisplay" class="font-size-display">14px</span>
-                <button onclick="increaseFontSize()" class="font-size-btn">+</button>
+    <div id="app" class="app" data-view="split">
+
+        <!-- ===================== Header ===================== -->
+        <header class="app-header">
+            <div class="brand">
+                <div class="brand-mark" aria-hidden="true">md</div>
+                <h1 class="brand-name">Markdown 编辑器</h1>
             </div>
+
+            <nav class="menubar" aria-label="主菜单">
+                <!-- 文件 -->
+                <button type="button" class="menubar-btn" id="menuBtnFile" aria-haspopup="menu" aria-expanded="false" aria-controls="menuFile" data-menu="menuFile">文件<svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+                <div class="popover menu" id="menuFile" role="menu" aria-labelledby="menuBtnFile" hidden>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="new"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 12v6"/><path d="M9 15h6"/></svg>新建文档</button>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="import"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V6a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v2"/><path d="M4 20h14l3-8H7z"/></svg>导入 Markdown 文件…</button>
+                    <div class="menu-sep" role="separator"></div>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="export"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>导出为 .md 文件</button>
+                </div>
+
+                <!-- 编辑 -->
+                <button type="button" class="menubar-btn" id="menuBtnEdit" aria-haspopup="menu" aria-expanded="false" aria-controls="menuEdit" data-menu="menuEdit">编辑<svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+                <div class="popover menu" id="menuEdit" role="menu" aria-labelledby="menuBtnEdit" hidden>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="undo"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>撤销<kbd class="menu-kbd">Ctrl+Z</kbd></button>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="redo"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>重做<kbd class="menu-kbd">Ctrl+Y</kbd></button>
+                    <div class="menu-sep" role="separator"></div>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="bold"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5h6a3.5 3.5 0 0 1 0 7H7z"/><path d="M7 12h7a3.5 3.5 0 0 1 0 7H7z"/></svg>加粗<kbd class="menu-kbd">Ctrl+B</kbd></button>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="italic"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 4h-9"/><path d="M14 20H5"/><path d="M15 4 9 20"/></svg>斜体<kbd class="menu-kbd">Ctrl+I</kbd></button>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="strike"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4H9a3 3 0 0 0-2.83 4"/><path d="M14 12a4 4 0 0 1 0 8H6"/><path d="M4 12h16"/></svg>删除线</button>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="highlight"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>高亮</button>
+                </div>
+
+                <!-- 插入 -->
+                <button type="button" class="menubar-btn" id="menuBtnInsert" aria-haspopup="menu" aria-expanded="false" aria-controls="menuInsert" data-menu="menuInsert">插入<svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+                <div class="popover menu" id="menuInsert" role="menu" aria-labelledby="menuBtnInsert" hidden>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="link"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>链接…<kbd class="menu-kbd">Ctrl+K</kbd></button>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="image"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>图片…</button>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="table"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 10h18"/><path d="M3 15h18"/><path d="M10 4v16"/></svg>表格…</button>
+                    <div class="menu-sep" role="separator"></div>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="code"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></svg>代码块</button>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="math"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 7V5H6l6 7-6 7h12v-2"/></svg>公式</button>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="quote"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h4v4c0 3-1.5 5-4 6"/><path d="M14 7h4v4c0 3-1.5 5-4 6"/></svg>引用</button>
+                    <div class="menu-sep" role="separator"></div>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="ul"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><circle cx="4.5" cy="6" r="1" fill="currentColor"/><circle cx="4.5" cy="12" r="1" fill="currentColor"/><circle cx="4.5" cy="18" r="1" fill="currentColor"/></svg>无序列表</button>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="ol"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 6h10"/><path d="M10 12h10"/><path d="M10 18h10"/><path d="M4 4.5h1.5V9"/><path d="M4 9h3"/><path d="M4 14.6c.4-.6 1-.9 1.6-.9.9 0 1.5.6 1.5 1.3 0 1.3-3.1 2.1-3.1 3.6H7"/></svg>有序列表</button>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="task"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="m8 12 3 3 5-6"/></svg>任务列表</button>
+                    <div class="menu-sep" role="separator"></div>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="toc"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M8 12h12"/><path d="M8 18h12"/><path d="M4 12h.01"/><path d="M4 18h.01"/></svg>目录<kbd class="menu-kbd">[TOC]</kbd></button>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="hr"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18"/><path d="M8 6h8" opacity="0.45"/><path d="M8 18h8" opacity="0.45"/></svg>分隔线<kbd class="menu-kbd">---</kbd></button>
+                </div>
+
+                <!-- 视图 -->
+                <button type="button" class="menubar-btn" id="menuBtnView" aria-haspopup="menu" aria-expanded="false" aria-controls="menuView" data-menu="menuView">视图<svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+                <div class="popover menu" id="menuView" role="menu" aria-labelledby="menuBtnView" hidden>
+                    <button type="button" role="menuitemradio" tabindex="-1" class="menu-item" data-command="view" data-mode="edit" aria-checked="false"><span class="menu-check" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span>仅编辑</button>
+                    <button type="button" role="menuitemradio" tabindex="-1" class="menu-item" data-command="view" data-mode="split" aria-checked="true"><span class="menu-check" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span>分栏</button>
+                    <button type="button" role="menuitemradio" tabindex="-1" class="menu-item" data-command="view" data-mode="preview" aria-checked="false"><span class="menu-check" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span>仅预览</button>
+                    <div class="menu-sep" role="separator"></div>
+                    <button type="button" role="menuitemcheckbox" tabindex="-1" class="menu-item" data-command="toggle-sync" aria-checked="true"><span class="menu-check" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span>同步滚动</button>
+                    <button type="button" role="menuitemcheckbox" tabindex="-1" class="menu-item" data-command="toggle-theme" aria-checked="false"><span class="menu-check" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span>深色模式</button>
+                    <div class="menu-sep" role="separator"></div>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="font-inc"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>增大字号</button>
+                    <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-command="font-dec"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 12h14"/></svg>减小字号</button>
+                </div>
+            </nav>
+
+            <div class="header-actions">
+                <div class="file-pill">
+                    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
+                    <span class="file-name" id="fileName">document.md</span>
+                    <span class="file-sep" aria-hidden="true"></span>
+                    <span class="save-state" id="saveState" data-state="saved"><span class="save-dot" aria-hidden="true"></span><span id="saveLabel">已自动保存</span></span>
+                </div>
+
+                <div class="segmented" role="group" aria-label="视图模式">
+                    <button type="button" data-command="view" data-mode="edit" aria-pressed="false" title="仅编辑"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/></svg><span class="seg-label">编辑</span></button>
+                    <button type="button" data-command="view" data-mode="split" aria-pressed="true" title="分栏"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M12 4v16"/></svg><span class="seg-label">分栏</span></button>
+                    <button type="button" data-command="view" data-mode="preview" aria-pressed="false" title="仅预览"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><span class="seg-label">预览</span></button>
+                </div>
+
+                <button type="button" class="icon-btn theme-toggle" data-command="toggle-theme" aria-label="深色模式" aria-pressed="false" title="切换深色模式">
+                    <svg class="icon-moon" aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></svg>
+                    <svg class="icon-sun" aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.9 4.9 1.4 1.4"/><path d="m17.7 17.7 1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m4.9 19.1 1.4-1.4"/><path d="m17.7 6.3 1.4-1.4"/></svg>
+                </button>
+
+                <button type="button" class="btn-ink" data-command="export"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>导出</button>
+            </div>
+        </header>
+
+        <!-- ===================== Sky stage ===================== -->
+        <main class="stage">
+            <div class="sky" aria-hidden="true">
+                <div class="cloud cloud-1"></div>
+                <div class="cloud cloud-2"></div>
+                <div class="cloud cloud-3"></div>
+                <div class="sky-dots"></div>
+            </div>
+
+            <!-- Formatting toolbar -->
+            <div class="toolbar-wrap">
+                <div class="toolbar" id="toolbar" role="toolbar" aria-label="格式工具栏">
+                    <button type="button" class="tb" data-command="undo" aria-label="撤销" title="撤销  Ctrl+Z"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+                    <button type="button" class="tb" data-command="redo" aria-label="重做" title="重做  Ctrl+Y"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
+
+                    <div class="tb-sep" aria-hidden="true"></div>
+
+                    <button type="button" class="tb tb-wide" id="headingButton" data-menu="headingMenu" aria-haspopup="menu" aria-expanded="false" aria-controls="headingMenu" aria-label="段落样式：正文" title="标题 / 正文"><span id="headingLabel">正文</span><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+
+                    <div class="tb-sep" aria-hidden="true"></div>
+
+                    <button type="button" class="tb" data-command="bold" aria-label="加粗" aria-pressed="false" title="加粗  Ctrl+B"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5h6a3.5 3.5 0 0 1 0 7H7z"/><path d="M7 12h7a3.5 3.5 0 0 1 0 7H7z"/></svg></button>
+                    <button type="button" class="tb" data-command="italic" aria-label="斜体" aria-pressed="false" title="斜体  Ctrl+I"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 4h-9"/><path d="M14 20H5"/><path d="M15 4 9 20"/></svg></button>
+                    <button type="button" class="tb" data-command="strike" aria-label="删除线" aria-pressed="false" title="删除线"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4H9a3 3 0 0 0-2.83 4"/><path d="M14 12a4 4 0 0 1 0 8H6"/><path d="M4 12h16"/></svg></button>
+                    <button type="button" class="tb" data-command="highlight" aria-label="高亮" aria-pressed="false" title="高亮"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></button>
+
+                    <div class="tb-sep" aria-hidden="true"></div>
+
+                    <button type="button" class="tb" id="linkButton" data-command="link" aria-label="插入链接" aria-haspopup="dialog" aria-expanded="false" title="链接  Ctrl+K"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></button>
+                    <button type="button" class="tb" id="imageButton" data-command="image" aria-label="插入图片" aria-haspopup="dialog" aria-expanded="false" title="图片"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg></button>
+                    <button type="button" class="tb" id="tableButton" data-command="table" aria-label="插入表格" aria-haspopup="dialog" aria-expanded="false" title="表格"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 10h18"/><path d="M3 15h18"/><path d="M10 4v16"/></svg></button>
+                    <button type="button" class="tb" data-command="code" aria-label="插入代码块" title="代码块"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></svg></button>
+                    <button type="button" class="tb" data-command="math" aria-label="插入公式" title="公式"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 7V5H6l6 7-6 7h12v-2"/></svg></button>
+                    <button type="button" class="tb" data-command="quote" aria-label="插入引用" title="引用"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h4v4c0 3-1.5 5-4 6"/><path d="M14 7h4v4c0 3-1.5 5-4 6"/></svg></button>
+
+                    <div class="tb-sep" aria-hidden="true"></div>
+
+                    <button type="button" class="tb" data-command="ul" aria-label="无序列表" title="无序列表"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><circle cx="4.5" cy="6" r="1" fill="currentColor"/><circle cx="4.5" cy="12" r="1" fill="currentColor"/><circle cx="4.5" cy="18" r="1" fill="currentColor"/></svg></button>
+                    <button type="button" class="tb" data-command="ol" aria-label="有序列表" title="有序列表"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 6h10"/><path d="M10 12h10"/><path d="M10 18h10"/><path d="M4 4.5h1.5V9"/><path d="M4 9h3"/><path d="M4 14.6c.4-.6 1-.9 1.6-.9.9 0 1.5.6 1.5 1.3 0 1.3-3.1 2.1-3.1 3.6H7"/></svg></button>
+                    <button type="button" class="tb" data-command="task" aria-label="任务列表" title="任务列表"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="m8 12 3 3 5-6"/></svg></button>
+
+                    <div class="tb-sep" aria-hidden="true"></div>
+
+                    <button type="button" class="tb" data-command="toc" aria-label="插入目录" title="目录 [TOC]"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M8 12h12"/><path d="M8 18h12"/><path d="M4 12h.01"/><path d="M4 18h.01"/></svg></button>
+                    <button type="button" class="tb" data-command="hr" aria-label="插入分隔线" title="分隔线"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18"/><path d="M8 6h8" opacity="0.45"/><path d="M8 18h8" opacity="0.45"/></svg></button>
+                </div>
+            </div>
+
+            <!-- Document card: preview on the left, source editor on the right -->
+            <section class="card" aria-label="文档">
+                <div class="panes" id="panes">
+                    <div class="pane pane-preview" id="previewPane">
+                        <div class="pane-head">
+                            <span class="pane-title"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>预览</span>
+                            <button type="button" class="sync-toggle" data-command="toggle-sync" aria-pressed="true">同步滚动<span class="switch" aria-hidden="true"></span></button>
+                        </div>
+                        <div class="preview-scroll" id="previewScroll">
+                            <article class="markdown-preview" id="preview"></article>
+                        </div>
+                    </div>
+
+                    <div class="splitter" id="splitter" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="previewPane" aria-label="拖动调整分栏宽度" aria-valuemin="20" aria-valuemax="80" aria-valuenow="50" title="拖动调整宽度，双击恢复">
+                        <span class="splitter-handle" aria-hidden="true"></span>
+                    </div>
+
+                    <div class="pane pane-editor" id="editorPane">
+                        <div class="pane-head">
+                            <span class="pane-title"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/></svg>Markdown</span>
+                            <span class="pane-meta" id="editorMeta">0 字 · 1 行</span>
+                        </div>
+                        <div class="code-editor" id="codeEditor">
+                            <div class="code-backdrop" id="editorBackdrop" aria-hidden="true"></div>
+                            <textarea id="editor" class="code-input" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Markdown 源文本" placeholder="在此输入 Markdown 内容..."></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status bar -->
+                <footer class="statusbar">
+                    <span id="statusCaret">第 1 行，第 1 列</span>
+                    <span id="statusWords">0 字</span>
+                    <span id="statusReading">约 0 分钟读完</span>
+                    <div class="statusbar-end">
+                        <span>UTF-8</span>
+                        <div class="font-size-control" role="group" aria-label="编辑器字号">
+                            <button type="button" data-command="font-dec" aria-label="减小字号"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+                            <span class="font-size-value" id="fontSizeDisplay">14 px</span>
+                            <button type="button" data-command="font-inc" aria-label="增大字号"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+                        </div>
+                    </div>
+                </footer>
+            </section>
+        </main>
+    </div>
+
+    <!-- ===================== Toolbar popovers ===================== -->
+
+    <!-- Paragraph style -->
+    <div class="popover menu menu-styles" id="headingMenu" role="menu" aria-label="段落样式" hidden>
+        <button type="button" role="menuitemradio" tabindex="-1" class="menu-item style-p" data-command="heading" data-level="0" aria-checked="true"><span class="menu-check" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span>正文<kbd class="menu-kbd">¶</kbd></button>
+        <button type="button" role="menuitemradio" tabindex="-1" class="menu-item style-h1" data-command="heading" data-level="1" aria-checked="false"><span class="menu-check" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span>标题 1<kbd class="menu-kbd">#</kbd></button>
+        <button type="button" role="menuitemradio" tabindex="-1" class="menu-item style-h2" data-command="heading" data-level="2" aria-checked="false"><span class="menu-check" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span>标题 2<kbd class="menu-kbd">##</kbd></button>
+        <button type="button" role="menuitemradio" tabindex="-1" class="menu-item style-h3" data-command="heading" data-level="3" aria-checked="false"><span class="menu-check" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span>标题 3<kbd class="menu-kbd">###</kbd></button>
+        <button type="button" role="menuitemradio" tabindex="-1" class="menu-item style-h4" data-command="heading" data-level="4" aria-checked="false"><span class="menu-check" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span>标题 4<kbd class="menu-kbd">####</kbd></button>
+        <button type="button" role="menuitemradio" tabindex="-1" class="menu-item style-h5" data-command="heading" data-level="5" aria-checked="false"><span class="menu-check" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span>标题 5<kbd class="menu-kbd">#####</kbd></button>
+        <button type="button" role="menuitemradio" tabindex="-1" class="menu-item style-h6" data-command="heading" data-level="6" aria-checked="false"><span class="menu-check" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></span>标题 6<kbd class="menu-kbd">######</kbd></button>
+    </div>
+
+    <!-- Table picker -->
+    <div class="popover popover-dialog" id="tablePicker" role="dialog" aria-labelledby="tablePickerTitle" hidden>
+        <div class="picker-head">
+            <span class="popover-title" id="tablePickerTitle">插入表格</span>
+            <span class="picker-size" id="tableSize">3 行 × 4 列</span>
         </div>
-        
-        <!-- Main Content -->
-        <div id="mainContent" class="main-content">
-            <!-- Preview Pane -->
-            <div id="previewPane" class="preview-pane">
-                <div id="preview" class="markdown-preview"></div>
-            </div>
-            
-            <!-- Resizer -->
-            <div id="resizer" class="resizer"></div>
-            
-            <!-- Editor Pane -->
-            <div id="editorPane" class="editor-pane">
-                <textarea id="editor" class="editor-textarea" placeholder="在此输入 Markdown 内容..."></textarea>
+        <div class="table-grid" id="tableGrid" aria-label="选择行数和列数"></div>
+        <div class="field">
+            <span class="field-label" id="tableAlignLabel">对齐方式</span>
+            <div class="segmented segmented-sm" role="group" aria-labelledby="tableAlignLabel" id="tableAlign">
+                <button type="button" data-align="left" aria-pressed="true">左对齐</button>
+                <button type="button" data-align="center" aria-pressed="false">居中</button>
+                <button type="button" data-align="right" aria-pressed="false">右对齐</button>
             </div>
         </div>
     </div>
 
-    <!-- JavaScript -->
-    <script src="script.js"></script>
+    <!-- Link / image dialog -->
+    <form class="popover popover-dialog" id="linkDialog" role="dialog" aria-labelledby="linkDialogTitle" hidden novalidate>
+        <span class="popover-title" id="linkDialogTitle">插入链接</span>
+        <div class="field">
+            <label class="field-label" for="linkText" id="linkTextLabel">显示文字</label>
+            <input class="input" id="linkText" type="text" autocomplete="off">
+        </div>
+        <div class="field">
+            <label class="field-label" for="linkUrl" id="linkUrlLabel">链接地址</label>
+            <input class="input input-mono" id="linkUrl" type="url" value="https://" autocomplete="off" spellcheck="false">
+        </div>
+        <label class="check"><input type="checkbox" id="linkAsImage">作为图片插入</label>
+        <div class="dialog-actions">
+            <button type="button" class="btn-ghost" data-dismiss>取消</button>
+            <button type="submit" class="btn-ink">插入</button>
+        </div>
+    </form>
+
+    <input type="file" id="fileInput" accept=".md,.markdown,.mdown,.txt,text/markdown,text/plain" hidden>
+
+    <!-- App scripts -->
+    <script src="assets/js/store.js"></script>
+    <script src="assets/js/sample.js"></script>
+    <script src="assets/js/markdown.js"></script>
+    <script src="assets/js/syntax.js"></script>
+    <script src="assets/js/editor.js"></script>
+    <script src="assets/js/commands.js"></script>
+    <script src="assets/js/popover.js"></script>
+    <script src="assets/js/app.js"></script>
 </body>
 </html>

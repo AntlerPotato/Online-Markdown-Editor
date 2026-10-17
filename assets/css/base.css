@@ -1,0 +1,242 @@
+/* ==========================================================================
+   Base: reset and shared primitives (buttons, inputs, icons)
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+select,
+textarea {
+    font: inherit;
+    color: inherit;
+}
+
+button {
+    cursor: pointer;
+}
+
+button:disabled {
+    cursor: default;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+svg {
+    flex: none;
+}
+
+[hidden] {
+    display: none !important;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* --- Buttons ------------------------------------------------------------ */
+
+.btn-ink {
+    height: 44px;
+    padding: 0 18px 0 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 0;
+    border-radius: var(--radius);
+    background: var(--ink);
+    color: var(--on-ink);
+    font-size: 15px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: background-color 0.15s ease;
+}
+
+.btn-ink:hover {
+    background: var(--ink-hover);
+}
+
+.btn-ghost {
+    height: 44px;
+    padding: 0 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text-control);
+    font-size: 14.5px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: background-color 0.15s ease;
+}
+
+.btn-ghost:hover {
+    background: var(--hover);
+}
+
+.icon-btn {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    display: inline-grid;
+    place-items: center;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text-control);
+    transition: background-color 0.15s ease;
+}
+
+.icon-btn:hover {
+    background: var(--hover);
+}
+
+/* --- Segmented control -------------------------------------------------- */
+
+.segmented {
+    display: flex;
+    gap: 2px;
+    padding: 4px;
+    background: var(--segment-bg);
+    border-radius: 14px;
+}
+
+.segmented > button {
+    height: 36px;
+    padding: 0 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 14.5px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.segmented > button:hover {
+    color: var(--text);
+}
+
+.segmented > button[aria-pressed="true"] {
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: var(--shadow-segment);
+}
+
+.segmented-sm {
+    border-radius: var(--radius);
+}
+
+.segmented-sm > button {
+    flex: 1;
+    height: 34px;
+    border-radius: 9px;
+    font-size: 13.5px;
+}
+
+.segmented-sm > button[aria-pressed="true"] {
+    box-shadow: 0 1px 2px rgba(17, 24, 26, 0.08);
+}
+
+/* --- Inputs -------------------------------------------------------------- */
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.field-label {
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.input {
+    width: 100%;
+    height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface-sunken);
+    color: var(--text);
+    font-size: 14.5px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.input:focus,
+.input:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--surface);
+    box-shadow: 0 0 0 0.5px var(--accent), 0 0 0 4px var(--accent-ring);
+}
+
+.input[aria-invalid="true"] {
+    border-color: var(--danger);
+    box-shadow: 0 0 0 0.5px var(--danger), 0 0 0 4px color-mix(in oklab, var(--danger) 14%, transparent);
+}
+
+.input-mono {
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+}
+
+.check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13.5px;
+    color: var(--text-soft);
+    cursor: pointer;
+}
+
+.check input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--ink);
+}
