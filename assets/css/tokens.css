@@ -20,13 +20,11 @@
     --pressed: #EAEFF0;
     --segment-bg: #E6EBEC;
     --toolbar-bg: rgba(255, 255, 255, 0.94);
-    --menu-open-bg: rgba(255, 255, 255, 0.9);
 
     /* Borders */
     --border: #E1E7E8;
     --border-strong: #DCE2E3;
     --border-soft: #EDF0F1;
-    --border-header: #E3E8E9;
     --splitter: #E6EBEC;
 
     /* Text */
@@ -41,6 +39,7 @@
     --marker: #8A9498;
     --dot: #B5BEC1;
     --switch-off: #C3CCCF;
+    --track: #D5DCDE;
 
     /* Inverse ("ink") buttons */
     --ink: #14191B;
@@ -61,6 +60,9 @@
     --rule: #EBEFF0;
     --selection: color-mix(in oklab, var(--accent) 24%, transparent);
     --danger: #B3261E;
+    --danger-text: #8E1F18;
+    --danger-bg: #FDF3F2;
+    --danger-border: #F0C9C5;
 
     /* Sky stage */
     --sky: linear-gradient(180deg, #AFCFD4 0%, #CCE1E3 30%, #E3EDEE 62%, #ECF1F1 100%);
@@ -69,11 +71,11 @@
     --sky-dots: rgba(22, 56, 62, 0.20);
 
     /* Shadows */
-    --shadow-xs: 0 1px 2px rgba(17, 24, 26, 0.06);
     --shadow-toolbar: 0 1px 2px rgba(17, 24, 26, 0.05), 0 14px 34px -14px rgba(28, 72, 80, 0.30);
     --shadow-card: 0 1px 2px rgba(17, 24, 26, 0.04), 0 30px 70px -30px rgba(28, 72, 80, 0.35);
     --shadow-pop: 0 1px 2px rgba(17, 24, 26, 0.06), 0 24px 48px -16px rgba(28, 72, 80, 0.35);
-    --shadow-segment: 0 1px 2px rgba(17, 24, 26, 0.08), 0 3px 10px -3px rgba(17, 24, 26, 0.14);
+    --shadow-pill: 0 6px 18px -8px rgba(28, 72, 80, 0.35);
+    --shadow-segment: 0 1px 2px rgba(17, 24, 26, 0.08), 0 2px 8px -2px rgba(17, 24, 26, 0.14);
 
     /* Typography */
     --font-ui: 'Outfit', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -88,10 +90,12 @@
 
     /* Radii */
     --radius-sm: 8px;
+    --radius-control: 10px;   /* toolbar buttons, inputs, dialog buttons */
     --radius: 12px;
-    --radius-lg: 16px;
-    --radius-xl: 22px;
-    --radius-stage: 26px;
+    --radius-md: 14px;        /* popovers, TOC box */
+    --radius-lg: 16px;        /* top bar */
+    --radius-xl: 18px;        /* document card */
+    --radius-stage: 22px;
 
     color-scheme: light;
 }
@@ -109,12 +113,10 @@
     --pressed: #283236;
     --segment-bg: #1D2427;
     --toolbar-bg: rgba(24, 30, 33, 0.92);
-    --menu-open-bg: rgba(255, 255, 255, 0.08);
 
     --border: #273034;
     --border-strong: #2F3A3E;
     --border-soft: #212A2D;
-    --border-header: #1E2629;
     --splitter: #242D30;
 
     --text: #E7ECED;
@@ -128,6 +130,7 @@
     --marker: #75828A;
     --dot: #4A5559;
     --switch-off: #3B474B;
+    --track: #333F43;
 
     --ink: #E7ECED;
     --ink-hover: #FFFFFF;
@@ -146,17 +149,20 @@
     --rule: #263033;
     --selection: color-mix(in oklab, var(--accent) 30%, transparent);
     --danger: #F2958E;
+    --danger-text: #F6B7B1;
+    --danger-bg: #2C1A19;
+    --danger-border: #5C2E2A;
 
     --sky: linear-gradient(180deg, #1A3A40 0%, #162B30 30%, #131E21 62%, #111719 100%);
     --cloud: #9FD3DA;
     --cloud-opacity: 0.08;
     --sky-dots: rgba(170, 215, 222, 0.14);
 
-    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
     --shadow-toolbar: 0 1px 2px rgba(0, 0, 0, 0.3), 0 14px 34px -14px rgba(0, 0, 0, 0.6);
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 30px 70px -30px rgba(0, 0, 0, 0.7);
     --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.35), 0 24px 48px -16px rgba(0, 0, 0, 0.7);
-    --shadow-segment: 0 1px 2px rgba(0, 0, 0, 0.35), 0 3px 10px -3px rgba(0, 0, 0, 0.4);
+    --shadow-pill: 0 6px 18px -8px rgba(0, 0, 0, 0.6);
+    --shadow-segment: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px -2px rgba(0, 0, 0, 0.4);
 
     color-scheme: dark;
 }

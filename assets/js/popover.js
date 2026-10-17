@@ -4,7 +4,8 @@
 (function (MDE) {
     let current = null;
 
-    const menuItems = (panel) => Array.from(panel.querySelectorAll('[role^="menuitem"]'));
+    // Items inside a hidden group (e.g. in the "more" menu) are skipped
+    const menuItems = (panel) => Array.from(panel.querySelectorAll('[role^="menuitem"]')).filter((el) => !el.closest('[hidden]'));
     const isMenu = (panel) => panel.getAttribute('role') === 'menu';
 
     function place(panel, anchor) {
@@ -65,7 +66,7 @@
 
     document.addEventListener('keydown', (e) => {
         if (!current) return;
-        const { panel, anchor, options } = current;
+        const { panel, anchor } = current;
         const inPanel = panel.contains(e.target);
         if (!inPanel && e.target !== anchor) return;
 
@@ -86,13 +87,6 @@
             case 'Home': next = items[0]; break;
             case 'End': next = items[items.length - 1]; break;
             case 'Tab': close(false); return;
-            case 'ArrowLeft':
-            case 'ArrowRight':
-                if (options.onArrow) {
-                    e.preventDefault();
-                    options.onArrow(e.key === 'ArrowRight' ? 1 : -1);
-                }
-                return;
             default: return;
         }
         e.preventDefault();

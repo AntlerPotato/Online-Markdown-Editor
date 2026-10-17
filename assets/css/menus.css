@@ -1,5 +1,6 @@
 /* ==========================================================================
-   Dropdown menus and popovers (paragraph style, table picker, link dialog)
+   Dropdown menus and popovers (file, paragraph style, more tools,
+   table picker, link dialog)
    ========================================================================== */
 
 .popover {
@@ -10,7 +11,7 @@
     margin: 0;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-md);
     box-shadow: var(--shadow-pop);
     color: var(--text);
     animation: popover-in 0.12s ease-out;
@@ -26,7 +27,7 @@
 /* --- Menus --------------------------------------------------------------- */
 
 .menu {
-    width: 280px;
+    width: 240px;
     max-height: calc(100vh - 96px);
     overflow-y: auto;
     padding: 6px;
@@ -36,17 +37,17 @@
 }
 
 .menu-item {
-    height: 44px;
+    height: 38px;
     flex: none;
-    padding: 0 12px;
+    padding: 0 10px;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     border: 0;
-    border-radius: 10px;
+    border-radius: 9px;
     background: transparent;
     color: var(--text-control);
-    font-size: 14.5px;
+    font-size: 14px;
     text-align: left;
     white-space: nowrap;
 }
@@ -70,7 +71,7 @@
     margin-left: auto;
     padding-left: 12px;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 400;
     letter-spacing: 0;
     color: var(--muted-2);
@@ -85,8 +86,8 @@
 
 /* Check slot used by radio / checkbox items */
 .menu-check {
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     flex: none;
     display: grid;
     place-items: center;
@@ -101,14 +102,35 @@
     visibility: visible;
 }
 
-/* Paragraph style menu: each item previews its own size */
-.menu-styles {
-    width: 270px;
-    gap: 2px;
+/* Compact menus: paragraph style and more tools */
+.menu-styles,
+.menu-compact {
+    gap: 1px;
 }
 
+.menu-compact .menu-item {
+    height: 34px;
+}
+
+/* Groups in the more menu; a rule separates each shown group from the
+   one above it */
+.menu-group {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.menu-group:not([hidden]) ~ .menu-group::before {
+    content: "";
+    height: 1px;
+    flex: none;
+    margin: 4px 8px;
+    background: var(--border-soft);
+}
+
+/* Paragraph style menu: each item previews its own size */
 .menu-styles .menu-item {
-    gap: 10px;
+    gap: 8px;
     font-weight: 600;
     color: var(--text-strong);
 }
@@ -118,39 +140,40 @@
 }
 
 .menu-styles .style-p {
+    height: 34px;
     font-weight: 400;
     color: var(--text-control);
 }
 
 .menu-styles .style-h1 {
-    height: 48px;
-    font-size: 22px;
+    height: 42px;
+    font-size: 21px;
     letter-spacing: -0.02em;
 }
 
 .menu-styles .style-h2 {
-    height: 46px;
-    font-size: 19px;
+    height: 40px;
+    font-size: 18px;
     letter-spacing: -0.01em;
 }
 
 .menu-styles .style-h3 {
-    font-size: 17px;
+    font-size: 16px;
 }
 
 .menu-styles .style-h4 {
-    height: 42px;
-    font-size: 15.5px;
+    height: 36px;
+    font-size: 15px;
 }
 
 .menu-styles .style-h5 {
-    height: 42px;
-    font-size: 14.5px;
+    height: 34px;
+    font-size: 14px;
 }
 
 .menu-styles .style-h6 {
-    height: 42px;
-    font-size: 13.5px;
+    height: 34px;
+    font-size: 13px;
     color: var(--text-soft);
 }
 
@@ -158,14 +181,18 @@
 
 .popover-dialog {
     width: 300px;
-    padding: 16px;
+    padding: 14px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
+}
+
+.popover-table {
+    width: 272px;
 }
 
 .popover-title {
-    font-size: 15px;
+    font-size: 14.5px;
     font-weight: 600;
 }
 
@@ -176,7 +203,7 @@
 }
 
 .picker-size {
-    font-size: 13.5px;
+    font-size: 13px;
     color: var(--muted);
     font-variant-numeric: tabular-nums;
 }
@@ -188,10 +215,10 @@
 }
 
 .table-cell {
-    height: 29px;
+    height: 26px;
     padding: 0;
     border: 1px solid var(--border);
-    border-radius: 7px;
+    border-radius: 6px;
     background: var(--surface-muted);
     transition: background-color 0.08s ease, border-color 0.08s ease;
 }
@@ -213,5 +240,4 @@
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-    padding-top: 2px;
 }

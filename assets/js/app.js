@@ -14,6 +14,9 @@
     const headingButton = $('headingButton');
     const headingLabel = $('headingLabel');
     const headingMenu = $('headingMenu');
+    const moreButton = $('moreButton');
+    const moreMenu = $('moreMenu');
+    const saveStatus = $('saveStatus');
 
     const DEFAULT_NAME = 'document.md';
     const FONT_MIN = 10;
@@ -78,8 +81,7 @@
         const lines = value.split('\n').length;
         const minutes = words ? Math.max(1, Math.round(words / 300)) : 0;
 
-        $('editorMeta').textContent = `${words} 字 · ${lines} 行`;
-        $('statusWords').textContent = `${words} 字`;
+        $('statusWords').textContent = `${words} 字 · ${lines} 行`;
         $('statusReading').textContent = `约 ${minutes} 分钟读完`;
     }
 
@@ -396,18 +398,27 @@
     // Files and autosave
     // ========================================================================
 
+    const SAVE_LABELS = { saved: '已自动保存', pending: '正在保存…', error: '无法自动保存' };
+
+    // The save indicator is icon-only until hovered, so its name carries the details
+    function updateSaveButton() {
+        $('saveButton').setAttribute('aria-label', `${state.fileName}，${SAVE_LABELS[saveStatus.dataset.state]}`);
+    }
+
     function setFileName(name) {
         state.fileName = name || DEFAULT_NAME;
         const label = $('fileName');
         label.textContent = state.fileName;
         label.title = state.fileName;
+        updateSaveButton();
     }
 
     function setSaveState(status) {
-        const el = $('saveState');
-        if (el.dataset.state === status) return;
-        el.dataset.state = status;
-        $('saveLabel').textContent = { saved: '已自动保存', pending: '正在保存…', error: '无法自动保存' }[status];
+        if (saveStatus.dataset.state === status) return;
+        saveStatus.dataset.state = status;
+        $('saveLabel').textContent = SAVE_LABELS[status];
+        $('saveAlert').textContent = status === 'error' ? SAVE_LABELS.error : '';
+        updateSaveButton();
     }
 
     function scheduleSave() {
@@ -423,7 +434,7 @@
     }
 
     window.addEventListener('pagehide', () => {
-        if ($('saveState').dataset.state === 'pending') saveNow();
+        if (saveStatus.dataset.state === 'pending') saveNow();
     });
 
     function newDocument() {
@@ -601,6 +612,7 @@
         new: newDocument,
         import: () => fileInput.click(),
         export: exportDocument,
+        save: saveNow,
         undo: () => editor.undo(),
         redo: () => editor.redo(),
         bold: () => commands.toggleInline('bold'),
@@ -666,8 +678,9 @@
         }
     });
 
-    // Toolbar: one tab stop, arrow keys move between buttons
+    // Toolbar: one tab stop, arrow keys move between the visible buttons
     const toolbarButtons = Array.from(toolbar.querySelectorAll(':scope > button'));
+    const visibleToolbarButtons = () => toolbarButtons.filter((el) => !el.hidden);
 
     function setToolbarTabStop(button) {
         toolbarButtons.forEach((el) => { el.tabIndex = el === button ? 0 : -1; });
@@ -678,38 +691,26 @@
     });
 
     toolbar.addEventListener('keydown', (e) => {
-        const index = toolbarButtons.indexOf(e.target);
+        const buttons = visibleToolbarButtons();
+        const index = buttons.indexOf(e.target);
         if (index === -1) return;
         let next = -1;
-        if (e.key === 'ArrowRight') next = (index + 1) % toolbarButtons.length;
-        else if (e.key === 'ArrowLeft') next = (index - 1 + toolbarButtons.length) % toolbarButtons.length;
+        if (e.key === 'ArrowRight') next = (index + 1) % buttons.length;
+        else if (e.key === 'ArrowLeft') next = (index - 1 + buttons.length) % buttons.length;
         else if (e.key === 'Home') next = 0;
-        else if (e.key === 'End') next = toolbarButtons.length - 1;
+        else if (e.key === 'End') next = buttons.length - 1;
         if (next === -1) return;
         e.preventDefault();
-        toolbarButtons[next].focus();
+        buttons[next].focus();
     });
 
-    // Menu buttons (header menus and the paragraph style dropdown)
-    const menuOptions = new Map();
-    const menubarButtons = Array.from(document.querySelectorAll('.menubar-btn'));
-
-    function moveMenubar(button, direction) {
-        const index = menubarButtons.indexOf(button);
-        const next = menubarButtons[(index + direction + menubarButtons.length) % menubarButtons.length];
-        next.focus();
-        popover.open($(next.dataset.menu), next, menuOptions.get(next));
-    }
-
+    // Menu buttons: the logo (file menu), paragraph style and more tools
     document.querySelectorAll('[data-menu]').forEach((button) => {
         const panel = $(button.dataset.menu);
-        const inMenubar = button.classList.contains('menubar-btn');
         const options = {
-            focusChecked: !inMenubar,
-            onArrow: inMenubar ? (direction) => moveMenubar(button, direction) : null,
+            focusChecked: true,
             onOpen: button === headingButton ? updateFormatState : null
         };
-        menuOptions.set(button, options);
 
         button.addEventListener('click', () => popover.toggle(panel, button, options));
         button.addEventListener('keydown', (e) => {
@@ -717,17 +718,54 @@
             e.preventDefault();
             popover.open(panel, button, { ...options, focus: e.key === 'ArrowUp' ? 'last' : 'first' });
         });
-
-        // Moving across the menubar while a menu is open switches menus
-        if (inMenubar) {
-            button.addEventListener('pointerenter', () => {
-                const open = popover.current();
-                if (open && open.anchor !== button && menubarButtons.includes(open.anchor)) {
-                    popover.open(panel, button, { ...options, focus: false });
-                }
-            });
-        }
     });
+
+    // ========================================================================
+    // Toolbar overflow
+    // When the top bar runs out of room, the trailing groups of tools
+    // (marked data-group) move into the "more" menu, last group first. If
+    // that is still not enough, the toolbar moves to a row of its own.
+    // ========================================================================
+
+    const header = $('appHeader');
+    const OVERFLOW_GROUPS = ['insert', 'list', 'block'];
+
+    function setOverflow(count) {
+        const moved = OVERFLOW_GROUPS.slice(OVERFLOW_GROUPS.length - count);
+        toolbar.querySelectorAll('[data-group]').forEach((el) => { el.hidden = moved.includes(el.dataset.group); });
+        moreMenu.querySelectorAll('[data-group]').forEach((el) => { el.hidden = !moved.includes(el.dataset.group); });
+        moreButton.hidden = count === 0;
+        $('moreSep').hidden = count === 0;
+    }
+
+    const toolbarOverflows = () => toolbar.scrollWidth > toolbar.clientWidth + 1;
+
+    function collapseToFit() {
+        let count = 0;
+        setOverflow(0);
+        while (count < OVERFLOW_GROUPS.length && toolbarOverflows()) {
+            setOverflow(++count);
+        }
+    }
+
+    function fitToolbar() {
+        header.classList.remove('is-stacked');
+        collapseToFit();
+        if (toolbarOverflows()) {
+            // On its own row; if even that is too narrow, the toolbar scrolls
+            header.classList.add('is-stacked');
+            collapseToFit();
+        }
+
+        const open = popover.current();
+        if (open && open.panel === moreMenu && moreButton.hidden) popover.close(false);
+        const visible = visibleToolbarButtons();
+        if (!visible.some((el) => el.tabIndex === 0)) setToolbarTabStop(visible[0]);
+    }
+
+    // The header itself isn't observed: stacking changes its height
+    window.addEventListener('resize', fitToolbar);
+    if ('ResizeObserver' in window) new ResizeObserver(fitToolbar).observe($('headerActions'));
 
     if (IS_MAC) {
         document.querySelectorAll('.menu-kbd').forEach((el) => { el.textContent = el.textContent.replace('Ctrl+', '⌘'); });
@@ -739,6 +777,7 @@
     // ========================================================================
 
     setToolbarTabStop(toolbarButtons[0]);
+    fitToolbar();
     setTheme(currentTheme(), false);
     setSync(state.sync);
     setFontSize(state.fontSize);
@@ -759,6 +798,7 @@
     if (document.fonts && document.fonts.ready) {
         document.fonts.ready.then(() => {
             editor.refreshLayout();
+            fitToolbar();
             syncScroll('editor');
         });
     }

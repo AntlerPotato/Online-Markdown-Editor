@@ -8,9 +8,11 @@ A lightweight Markdown editor that runs entirely in the browser: live preview on
 
 **Writing**
 - Editor with line numbers, Markdown syntax highlighting and current-line highlight
-- Floating toolbar: undo/redo, paragraph style (H1–H6), bold, italic, strikethrough, highlight, links, images, tables, code blocks, formulas, quotes, lists, task lists, table of contents, horizontal rules
+- A single top bar: the logo opens the file menu (new, import), followed by the formatting tools, the save state, view modes, theme and export
+- Formatting tools: undo/redo, paragraph style (H1–H6), bold, italic, strikethrough, highlight, links, images, tables, code blocks, formulas, quotes, lists, task lists, table of contents, horizontal rules
+- On narrow windows the trailing tool groups move into a **⋯** (more) menu, and on phones the toolbar gets a row of its own
 - Table picker (up to 6 × 8, with column alignment) and a link/image dialog
-- File / Edit / Insert / View menus, fully usable from the keyboard
+- Toolbar and menus are fully usable from the keyboard
 
 **Preview**
 - Math via KaTeX, code blocks via highlight.js (with line numbers and a copy button)
@@ -19,8 +21,8 @@ A lightweight Markdown editor that runs entirely in the browser: live preview on
 
 **Workspace**
 - Edit-only, split and preview-only views, with a draggable divider
-- Light and dark themes, adjustable font size, word count and reading time
-- Autosave in the browser, plus import and export of `.md` files
+- Light and dark themes; the status bar holds the caret position, word and line count, reading time, the sync-scroll switch and the font size
+- Autosave in the browser, plus import and export of `.md` files. The save indicator next to the view switch shows the file name on hover and stays expanded if saving fails
 
 ## Markdown extras
 
@@ -64,13 +66,13 @@ Documents are autosaved to your browser's `localStorage`. They never leave your 
 ## Project structure
 
 ```
-index.html              App markup: header, menus, toolbar, panes, popovers
+index.html              App markup: top bar, toolbar, panes, status bar, popovers
 assets/
   css/
     tokens.css          Design tokens (colours, fonts, radii, shadows), light and dark
     base.css            Reset and shared controls (buttons, segmented control, inputs)
-    layout.css          App shell: header, stage, toolbar, card, panes, splitter, status bar
-    menus.css           Dropdown menus, table picker, link dialog
+    layout.css          App shell: stage, top bar, toolbar, save state, card, panes, splitter, status bar
+    menus.css           Menus (file, paragraph style, more tools), table picker, link dialog
     editor.css          Source editor (transparent textarea over a highlighted backdrop)
     preview.css         Rendered Markdown, code theme, KaTeX tweaks
   js/
@@ -81,7 +83,7 @@ assets/
     editor.js           Editor component: backdrop, caret tracking, undo/redo
     commands.js         Formatting commands (wrap, headings, lists, tables, links)
     popover.js          Menu and popover positioning and keyboard handling
-    app.js              Wires everything together
+    app.js              Wires everything together (including the toolbar overflow)
 docs/
   screenshot.png
 ```
