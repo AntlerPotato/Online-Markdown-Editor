@@ -1,0 +1,162 @@
+/* ==========================================================================
+   Design tokens
+   Light theme is the default; dark theme overrides via [data-theme="dark"].
+   ========================================================================== */
+
+:root {
+    /* Accent */
+    --accent: #2E7C84;
+    --accent-soft: color-mix(in oklab, var(--accent) 9%, transparent);
+    --accent-tint: color-mix(in oklab, var(--accent) 18%, var(--surface));
+    --accent-ring: color-mix(in oklab, var(--accent) 14%, transparent);
+
+    /* Surfaces */
+    --bg: #F3F5F5;
+    --surface: #FFFFFF;
+    --surface-sunken: #FAFBFB;
+    --surface-muted: #F4F7F7;
+    --hover: #F1F4F5;
+    --hover-strong: #EEF2F3;
+    --pressed: #EAEFF0;
+    --segment-bg: #E6EBEC;
+    --toolbar-bg: rgba(255, 255, 255, 0.94);
+    --menu-open-bg: rgba(255, 255, 255, 0.9);
+
+    /* Borders */
+    --border: #E1E7E8;
+    --border-strong: #DCE2E3;
+    --border-soft: #EDF0F1;
+    --border-header: #E3E8E9;
+    --splitter: #E6EBEC;
+
+    /* Text */
+    --text: #14191B;
+    --text-strong: #121618;
+    --text-control: #1C2225;
+    --text-body: #2A3134;
+    --text-soft: #3A4347;
+    --muted: #545D61;
+    --muted-2: #646E72;
+    --faint: #737D81;
+    --marker: #8A9498;
+    --dot: #B5BEC1;
+    --switch-off: #C3CCCF;
+
+    /* Inverse ("ink") buttons */
+    --ink: #14191B;
+    --ink-hover: #2A3033;
+    --on-ink: #FFFFFF;
+
+    /* Content colours */
+    --link: #1F5F66;
+    --link-hover: #123E43;
+    --warm: #A0582E;
+    --number: #6F4FB0;
+    --mark-bg: #F6E7A6;
+    --mark-fg: inherit;
+    --code-bg: #F7F9F9;
+    --code-border: #E4E9EA;
+    --code-head-border: #E9EDEE;
+    --inline-code-bg: #EEF2F3;
+    --rule: #EBEFF0;
+    --selection: color-mix(in oklab, var(--accent) 24%, transparent);
+    --danger: #B3261E;
+
+    /* Sky stage */
+    --sky: linear-gradient(180deg, #AFCFD4 0%, #CCE1E3 30%, #E3EDEE 62%, #ECF1F1 100%);
+    --cloud: #FFFFFF;
+    --cloud-opacity: 0.65;
+    --sky-dots: rgba(22, 56, 62, 0.20);
+
+    /* Shadows */
+    --shadow-xs: 0 1px 2px rgba(17, 24, 26, 0.06);
+    --shadow-toolbar: 0 1px 2px rgba(17, 24, 26, 0.05), 0 14px 34px -14px rgba(28, 72, 80, 0.30);
+    --shadow-card: 0 1px 2px rgba(17, 24, 26, 0.04), 0 30px 70px -30px rgba(28, 72, 80, 0.35);
+    --shadow-pop: 0 1px 2px rgba(17, 24, 26, 0.06), 0 24px 48px -16px rgba(28, 72, 80, 0.35);
+    --shadow-segment: 0 1px 2px rgba(17, 24, 26, 0.08), 0 3px 10px -3px rgba(17, 24, 26, 0.14);
+
+    /* Typography */
+    --font-ui: 'Outfit', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', monospace;
+    --font-math: 'KaTeX_Main', 'Times New Roman', serif;
+
+    /* Dynamic font sizes (driven by the status bar control) */
+    --font-size: 14px;
+    --editor-font-size: var(--font-size);
+    --editor-line-height: 1.85;
+    --preview-font-size: calc(var(--font-size) * 1.1);
+
+    /* Radii */
+    --radius-sm: 8px;
+    --radius: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 22px;
+    --radius-stage: 26px;
+
+    color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+    --accent: #5FB3BB;
+    --accent-soft: color-mix(in oklab, var(--accent) 12%, transparent);
+
+    --bg: #0E1213;
+    --surface: #161B1D;
+    --surface-sunken: #12171A;
+    --surface-muted: #1C2326;
+    --hover: #20282B;
+    --hover-strong: #20282B;
+    --pressed: #283236;
+    --segment-bg: #1D2427;
+    --toolbar-bg: rgba(24, 30, 33, 0.92);
+    --menu-open-bg: rgba(255, 255, 255, 0.08);
+
+    --border: #273034;
+    --border-strong: #2F3A3E;
+    --border-soft: #212A2D;
+    --border-header: #1E2629;
+    --splitter: #242D30;
+
+    --text: #E7ECED;
+    --text-strong: #F2F5F5;
+    --text-control: #DDE4E5;
+    --text-body: #CDD5D7;
+    --text-soft: #B6C0C3;
+    --muted: #9AA6AA;
+    --muted-2: #8E9A9E;
+    --faint: #75828A;
+    --marker: #75828A;
+    --dot: #4A5559;
+    --switch-off: #3B474B;
+
+    --ink: #E7ECED;
+    --ink-hover: #FFFFFF;
+    --on-ink: #0E1213;
+
+    --link: #7CC6CD;
+    --link-hover: #A9DDE2;
+    --warm: #E2A77D;
+    --number: #B8A3F0;
+    --mark-bg: #4F4418;
+    --mark-fg: #F6E8B8;
+    --code-bg: #12181A;
+    --code-border: #263033;
+    --code-head-border: #222B2E;
+    --inline-code-bg: #222B2E;
+    --rule: #263033;
+    --selection: color-mix(in oklab, var(--accent) 30%, transparent);
+    --danger: #F2958E;
+
+    --sky: linear-gradient(180deg, #1A3A40 0%, #162B30 30%, #131E21 62%, #111719 100%);
+    --cloud: #9FD3DA;
+    --cloud-opacity: 0.08;
+    --sky-dots: rgba(170, 215, 222, 0.14);
+
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-toolbar: 0 1px 2px rgba(0, 0, 0, 0.3), 0 14px 34px -14px rgba(0, 0, 0, 0.6);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 30px 70px -30px rgba(0, 0, 0, 0.7);
+    --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.35), 0 24px 48px -16px rgba(0, 0, 0, 0.7);
+    --shadow-segment: 0 1px 2px rgba(0, 0, 0, 0.35), 0 3px 10px -3px rgba(0, 0, 0, 0.4);
+
+    color-scheme: dark;
+}

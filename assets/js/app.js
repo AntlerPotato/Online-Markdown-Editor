@@ -1,0 +1,765 @@
+// Wires the editor, preview, toolbar, menus and settings together.
+(function (MDE) {
+    const { store, popover } = MDE;
+    const $ = (id) => document.getElementById(id);
+
+    const app = $('app');
+    const textarea = $('editor');
+    const preview = $('preview');
+    const previewScroll = $('previewScroll');
+    const panes = $('panes');
+    const splitter = $('splitter');
+    const toolbar = $('toolbar');
+    const fileInput = $('fileInput');
+    const headingButton = $('headingButton');
+    const headingLabel = $('headingLabel');
+    const headingMenu = $('headingMenu');
+
+    const DEFAULT_NAME = 'document.md';
+    const FONT_MIN = 10;
+    const FONT_MAX = 24;
+    const FONT_STEP = 2;
+    const VIEWS = ['edit', 'split', 'preview'];
+    const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+
+    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+    const state = {
+        view: VIEWS.includes(store.get('view')) ? store.get('view') : 'split',
+        sync: store.get('sync', true) !== false,
+        fontSize: clamp(Number(store.get('fontSize', 14)) || 14, FONT_MIN, FONT_MAX),
+        split: clamp(Number(store.get('split', 50)) || 50, 20, 80),
+        fileName: DEFAULT_NAME,
+        headingLines: [],
+        previewDirty: true,
+        ready: false
+    };
+
+    let previewTimer = 0;
+    let statsTimer = 0;
+    let saveTimer = 0;
+    let syncSource = null;
+    let syncTimer = 0;
+    let tocFrame = 0;
+
+    const editor = MDE.createEditor({
+        textarea,
+        backdrop: $('editorBackdrop'),
+        container: $('codeEditor'),
+        onChange: handleChange,
+        onCaret: handleCaret
+    });
+    const commands = MDE.createCommands(editor);
+
+    // ========================================================================
+    // Document state
+    // ========================================================================
+
+    const CJK = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/g;
+
+    // Each CJK character counts as one 字, plus Latin words and numbers
+    function countWords(text) {
+        const cjk = (text.match(CJK) || []).length;
+        const words = (text.replace(CJK, ' ').match(/[A-Za-z0-9\u00C0-\u024F]+(?:['’-][A-Za-z0-9\u00C0-\u024F]+)*/g) || []).length;
+        return cjk + words;
+    }
+
+    function handleChange() {
+        updateHistoryButtons();
+        scheduleStats();
+        schedulePreview();
+        if (state.ready) scheduleSave();
+    }
+
+    function updateStats() {
+        clearTimeout(statsTimer);
+        const value = editor.getValue();
+        const words = countWords(value);
+        const lines = value.split('\n').length;
+        const minutes = words ? Math.max(1, Math.round(words / 300)) : 0;
+
+        $('editorMeta').textContent = `${words} 字 · ${lines} 行`;
+        $('statusWords').textContent = `${words} 字`;
+        $('statusReading').textContent = `约 ${minutes} 分钟读完`;
+    }
+
+    function scheduleStats() {
+        clearTimeout(statsTimer);
+        statsTimer = setTimeout(updateStats, editor.getValue().length > 30000 ? 300 : 60);
+    }
+
+    function handleCaret({ line, col }) {
+        $('statusCaret').textContent = `第 ${line + 1} 行，第 ${col + 1} 列`;
+        updateFormatState();
+    }
+
+    const formatButtons = ['bold', 'italic', 'strike', 'highlight'].map((name) => toolbar.querySelector(`[data-command="${name}"]`));
+
+    // Reflect the caret's context in the toolbar (paragraph style, B/I/S/H)
+    function updateFormatState() {
+        const level = commands.headingLevel();
+        const label = level ? `标题 ${level}` : '正文';
+        headingLabel.textContent = label;
+        headingButton.setAttribute('aria-label', `段落样式：${label}`);
+        headingMenu.querySelectorAll('[data-level]').forEach((item) => {
+            item.setAttribute('aria-checked', String(Number(item.dataset.level) === level));
+        });
+        formatButtons.forEach((button) => {
+            button.setAttribute('aria-pressed', String(commands.isActive(button.dataset.command)));
+        });
+    }
+
+    const undoControls = document.querySelectorAll('[data-command="undo"]');
+    const redoControls = document.querySelectorAll('[data-command="redo"]');
+
+    function updateHistoryButtons() {
+        undoControls.forEach((el) => el.setAttribute('aria-disabled', String(!editor.canUndo())));
+        redoControls.forEach((el) => el.setAttribute('aria-disabled', String(!editor.canRedo())));
+    }
+
+    // ========================================================================
+    // Preview
+    // ========================================================================
+
+    function schedulePreview() {
+        if (state.view === 'edit') {
+            state.previewDirty = true;
+            return;
+        }
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(renderPreview, editor.getValue().length > 30000 ? 250 : 16);
+    }
+
+    function renderPreview() {
+        clearTimeout(previewTimer);
+        state.previewDirty = false;
+        state.headingLines = MDE.markdown.renderInto(preview, editor.getValue());
+        updateActiveHeading();
+        syncScroll('editor');
+    }
+
+    // Distance of an element from the top of the preview's scrollable content
+    function contentTop(el) {
+        return el.getBoundingClientRect().top - previewScroll.getBoundingClientRect().top + previewScroll.scrollTop;
+    }
+
+    // Highlight the TOC entry of the section currently at the top of the preview
+    function updateActiveHeading() {
+        const links = preview.querySelectorAll('.toc a');
+        if (!links.length) return;
+        const headings = preview.querySelectorAll('h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]');
+        if (!headings.length) return;
+
+        const atBottom = previewScroll.scrollTop >= previewScroll.scrollHeight - previewScroll.clientHeight - 2;
+        let active = headings[0];
+        if (atBottom) {
+            active = headings[headings.length - 1];
+        } else {
+            const line = previewScroll.scrollTop + 48;
+            for (const heading of headings) {
+                if (contentTop(heading) <= line) active = heading;
+                else break;
+            }
+        }
+        links.forEach((link) => link.classList.toggle('is-active', link.getAttribute('href') === '#' + active.id));
+    }
+
+    function scheduleActiveHeading() {
+        if (tocFrame) return;
+        tocFrame = requestAnimationFrame(() => {
+            tocFrame = 0;
+            updateActiveHeading();
+        });
+    }
+
+    preview.addEventListener('click', (e) => {
+        const copyButton = e.target.closest('.code-copy');
+        if (copyButton) {
+            copyCode(copyButton);
+            return;
+        }
+
+        const link = e.target.closest('a[href]');
+        if (!link) return;
+        const href = link.getAttribute('href');
+        e.preventDefault();
+        if (href.startsWith('#')) {
+            let id = href.slice(1);
+            try { id = decodeURIComponent(id); } catch (err) { /* keep raw id */ }
+            const target = preview.querySelector('#' + CSS.escape(id));
+            if (target) previewScroll.scrollTo({ top: contentTop(target) - 16, behavior: 'smooth' });
+        } else {
+            // Keep the editor open; external links go to a new tab
+            window.open(link.href, '_blank', 'noopener');
+        }
+    });
+
+    async function copyCode(button) {
+        const code = button.closest('.code-block').querySelector('code').textContent;
+        let copied = false;
+        try {
+            await navigator.clipboard.writeText(code);
+            copied = true;
+        } catch (err) {
+            copied = legacyCopy(code);
+        }
+        const label = button.querySelector('span');
+        label.textContent = copied ? '已复制' : '复制失败';
+        button.classList.toggle('is-copied', copied);
+        setTimeout(() => {
+            label.textContent = '复制';
+            button.classList.remove('is-copied');
+        }, 1600);
+    }
+
+    function legacyCopy(text) {
+        const helper = document.createElement('textarea');
+        helper.value = text;
+        helper.setAttribute('readonly', '');
+        helper.style.position = 'fixed';
+        helper.style.opacity = '0';
+        document.body.appendChild(helper);
+        helper.select();
+        let ok = false;
+        try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+        helper.remove();
+        return ok;
+    }
+
+    // ========================================================================
+    // Synchronised scrolling
+    // Headings are used as anchor points between the two panes; positions in
+    // between are interpolated, so long code blocks or formulas don't drift.
+    // ========================================================================
+
+    function scrollAnchors() {
+        const editorMax = Math.max(0, textarea.scrollHeight - textarea.clientHeight);
+        const previewMax = Math.max(0, previewScroll.scrollHeight - previewScroll.clientHeight);
+        const anchors = [[0, 0]];
+        const headings = preview.querySelectorAll(':scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6');
+        const count = Math.min(headings.length, state.headingLines.length);
+
+        for (let i = 0; i < count; i++) {
+            const editorY = editor.lineTop(state.headingLines[i]);
+            const previewY = contentTop(headings[i]) - 16;
+            const last = anchors[anchors.length - 1];
+            if (editorY > last[0] && previewY > last[1] && editorY < editorMax && previewY < previewMax) {
+                anchors.push([editorY, previewY]);
+            }
+        }
+        const last = anchors[anchors.length - 1];
+        anchors.push([Math.max(editorMax, last[0] + 1), Math.max(previewMax, last[1] + 1)]);
+        return anchors;
+    }
+
+    function syncScroll(source) {
+        if (!state.sync || state.view !== 'split') return;
+        if (syncSource && syncSource !== source) return;
+
+        // Ignore the scroll event our own update triggers on the other pane
+        syncSource = source;
+        clearTimeout(syncTimer);
+        syncTimer = setTimeout(() => { syncSource = null; }, 80);
+
+        const from = source === 'editor' ? 0 : 1;
+        const to = 1 - from;
+        const fromEl = source === 'editor' ? textarea : previewScroll;
+        const toEl = source === 'editor' ? previewScroll : textarea;
+        const anchors = scrollAnchors();
+        const y = fromEl.scrollTop;
+
+        for (let i = 1; i < anchors.length; i++) {
+            const a = anchors[i - 1];
+            const b = anchors[i];
+            if (y <= b[from] || i === anchors.length - 1) {
+                const span = b[from] - a[from];
+                const t = span > 0 ? clamp((y - a[from]) / span, 0, 1) : 0;
+                toEl.scrollTop = a[to] + t * (b[to] - a[to]);
+                break;
+            }
+        }
+    }
+
+    textarea.addEventListener('scroll', () => syncScroll('editor'), { passive: true });
+    previewScroll.addEventListener('scroll', () => {
+        syncScroll('preview');
+        scheduleActiveHeading();
+    }, { passive: true });
+
+    // ========================================================================
+    // Settings: view mode, sync, theme, font size, split
+    // ========================================================================
+
+    function setChecked(selector, value) {
+        document.querySelectorAll(selector).forEach((el) => {
+            const role = el.getAttribute('role') || '';
+            el.setAttribute(role.startsWith('menuitem') ? 'aria-checked' : 'aria-pressed', String(value));
+        });
+    }
+
+    function setView(mode) {
+        if (!VIEWS.includes(mode)) return;
+        state.view = mode;
+        app.dataset.view = mode;
+        store.set('view', mode);
+        document.querySelectorAll('[data-command="view"]').forEach((el) => {
+            const role = el.getAttribute('role') || '';
+            el.setAttribute(role === 'menuitemradio' ? 'aria-checked' : 'aria-pressed', String(el.dataset.mode === mode));
+        });
+        if (mode !== 'edit' && state.previewDirty) renderPreview();
+        else syncScroll('editor');
+    }
+
+    function setSync(on) {
+        state.sync = on;
+        store.set('sync', on);
+        setChecked('[data-command="toggle-sync"]', on);
+        if (on) syncScroll('editor');
+    }
+
+    const currentTheme = () => (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
+
+    function setTheme(theme, persist = true) {
+        document.documentElement.dataset.theme = theme;
+        if (persist) store.set('theme', theme);
+        setChecked('[data-command="toggle-theme"]', theme === 'dark');
+    }
+
+    // Follow the system theme until the user picks one
+    if (window.matchMedia) {
+        const query = window.matchMedia('(prefers-color-scheme: dark)');
+        const follow = (e) => {
+            if (store.get('theme', null) === null) setTheme(e.matches ? 'dark' : 'light', false);
+        };
+        if (query.addEventListener) query.addEventListener('change', follow);
+    }
+
+    function setFontSize(size) {
+        state.fontSize = clamp(size, FONT_MIN, FONT_MAX);
+        document.documentElement.style.setProperty('--font-size', state.fontSize + 'px');
+        $('fontSizeDisplay').textContent = `${state.fontSize} px`;
+        document.querySelectorAll('[data-command="font-dec"]').forEach((el) => {
+            el.setAttribute('aria-disabled', String(state.fontSize <= FONT_MIN));
+        });
+        document.querySelectorAll('[data-command="font-inc"]').forEach((el) => {
+            el.setAttribute('aria-disabled', String(state.fontSize >= FONT_MAX));
+        });
+        store.set('fontSize', state.fontSize);
+    }
+
+    function setSplit(percent, persist = true) {
+        state.split = clamp(percent, 20, 80);
+        panes.style.setProperty('--split', state.split + '%');
+        splitter.setAttribute('aria-valuenow', String(Math.round(state.split)));
+        if (persist) store.set('split', Math.round(state.split * 10) / 10);
+    }
+
+    // Splitter: drag, double-click to reset, arrow keys to nudge
+    splitter.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        splitter.setPointerCapture(e.pointerId);
+        document.body.classList.add('is-resizing');
+        const rect = panes.getBoundingClientRect();
+
+        const move = (ev) => setSplit(((ev.clientX - rect.left) / rect.width) * 100, false);
+        const end = () => {
+            document.body.classList.remove('is-resizing');
+            splitter.removeEventListener('pointermove', move);
+            splitter.removeEventListener('pointerup', end);
+            splitter.removeEventListener('pointercancel', end);
+            setSplit(state.split);
+        };
+        splitter.addEventListener('pointermove', move);
+        splitter.addEventListener('pointerup', end);
+        splitter.addEventListener('pointercancel', end);
+    });
+
+    splitter.addEventListener('dblclick', () => setSplit(50));
+
+    splitter.addEventListener('keydown', (e) => {
+        const step = e.shiftKey ? 10 : 2;
+        const keys = {
+            ArrowLeft: state.split - step,
+            ArrowRight: state.split + step,
+            Home: 20,
+            End: 80,
+            Enter: 50
+        };
+        if (e.key in keys) {
+            e.preventDefault();
+            setSplit(keys[e.key]);
+        }
+    });
+
+    // ========================================================================
+    // Files and autosave
+    // ========================================================================
+
+    function setFileName(name) {
+        state.fileName = name || DEFAULT_NAME;
+        const label = $('fileName');
+        label.textContent = state.fileName;
+        label.title = state.fileName;
+    }
+
+    function setSaveState(status) {
+        const el = $('saveState');
+        if (el.dataset.state === status) return;
+        el.dataset.state = status;
+        $('saveLabel').textContent = { saved: '已自动保存', pending: '正在保存…', error: '无法自动保存' }[status];
+    }
+
+    function scheduleSave() {
+        setSaveState('pending');
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(saveNow, 600);
+    }
+
+    function saveNow() {
+        clearTimeout(saveTimer);
+        const ok = store.set('doc', { name: state.fileName, content: editor.getValue(), savedAt: Date.now() });
+        setSaveState(ok ? 'saved' : 'error');
+    }
+
+    window.addEventListener('pagehide', () => {
+        if ($('saveState').dataset.state === 'pending') saveNow();
+    });
+
+    function newDocument() {
+        if (editor.getValue() && !confirm('确定要新建文档吗？当前内容将会丢失。')) return;
+        setFileName(DEFAULT_NAME);
+        editor.setValue('');
+        editor.focus();
+    }
+
+    fileInput.addEventListener('change', () => {
+        const file = fileInput.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            setFileName(file.name);
+            editor.setValue(String(reader.result));
+            previewScroll.scrollTop = 0;
+            editor.focus();
+        };
+        reader.readAsText(file);
+        fileInput.value = '';
+    });
+
+    function exportDocument() {
+        const name = state.fileName.replace(/\.(md|markdown|mdown|txt)$/i, '') + '.md';
+        const blob = new Blob([editor.getValue()], { type: 'text/markdown;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+
+    // ========================================================================
+    // Link dialog
+    // ========================================================================
+
+    const linkDialog = $('linkDialog');
+    const linkText = $('linkText');
+    const linkUrl = $('linkUrl');
+    const linkAsImage = $('linkAsImage');
+    let linkRange = null;
+
+    function updateLinkLabels() {
+        const image = linkAsImage.checked;
+        $('linkDialogTitle').textContent = image ? '插入图片' : '插入链接';
+        $('linkTextLabel').textContent = image ? '图片描述' : '显示文字';
+        $('linkUrlLabel').textContent = image ? '图片地址' : '链接地址';
+    }
+
+    function openLinkDialog(image) {
+        const { start, end, value } = editor.getSelection();
+        const selected = value.slice(start, end);
+        const isUrl = /^(https?:\/\/|www\.)\S+$/.test(selected.trim());
+        linkRange = { start, end };
+        linkText.value = isUrl ? '' : selected.replace(/\s*\n\s*/g, ' ');
+        linkUrl.value = isUrl ? selected.trim() : 'https://';
+        linkUrl.removeAttribute('aria-invalid');
+        linkAsImage.checked = image;
+        updateLinkLabels();
+
+        popover.open(linkDialog, $(image ? 'imageButton' : 'linkButton'), {
+            onOpen: () => {
+                linkUrl.focus();
+                linkUrl.setSelectionRange(linkUrl.value.length, linkUrl.value.length);
+            }
+        });
+    }
+
+    linkAsImage.addEventListener('change', updateLinkLabels);
+    linkUrl.addEventListener('input', () => linkUrl.removeAttribute('aria-invalid'));
+
+    linkDialog.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const url = linkUrl.value.trim();
+        if (!url || /^https?:\/\/$/i.test(url)) {
+            linkUrl.setAttribute('aria-invalid', 'true');
+            linkUrl.focus();
+            return;
+        }
+        popover.close(false);
+        commands.insertLink({ text: linkText.value.trim(), url, image: linkAsImage.checked, ...linkRange });
+    });
+
+    linkDialog.querySelector('[data-dismiss]').addEventListener('click', () => {
+        popover.close(false);
+        editor.focus();
+    });
+
+    // ========================================================================
+    // Table picker
+    // ========================================================================
+
+    const tableGrid = $('tableGrid');
+    const GRID_ROWS = 6;
+    const GRID_COLS = 8;
+    const table = { rows: 3, cols: 4, align: 'left' };
+
+    for (let r = 1; r <= GRID_ROWS; r++) {
+        for (let c = 1; c <= GRID_COLS; c++) {
+            const cell = document.createElement('button');
+            cell.type = 'button';
+            cell.className = 'table-cell';
+            cell.tabIndex = -1;
+            cell.dataset.row = r;
+            cell.dataset.col = c;
+            cell.setAttribute('aria-label', `${r} 行 ${c} 列`);
+            tableGrid.appendChild(cell);
+        }
+    }
+
+    const cellAt = (r, c) => tableGrid.children[(r - 1) * GRID_COLS + (c - 1)];
+
+    function paintTable(rows, cols) {
+        table.rows = rows;
+        table.cols = cols;
+        $('tableSize').textContent = `${rows} 行 × ${cols} 列`;
+        for (const cell of tableGrid.children) {
+            const r = Number(cell.dataset.row);
+            const c = Number(cell.dataset.col);
+            cell.classList.toggle('is-on', r <= rows && c <= cols);
+            cell.tabIndex = r === rows && c === cols ? 0 : -1;
+        }
+    }
+
+    function pickCell(e) {
+        const cell = e.target.closest('.table-cell');
+        if (cell) paintTable(Number(cell.dataset.row), Number(cell.dataset.col));
+        return cell;
+    }
+
+    tableGrid.addEventListener('pointerover', pickCell);
+    tableGrid.addEventListener('focusin', pickCell);
+    tableGrid.addEventListener('click', (e) => {
+        if (!pickCell(e)) return;
+        popover.close(false);
+        commands.insertTable(table.rows, table.cols, table.align);
+    });
+
+    tableGrid.addEventListener('keydown', (e) => {
+        const moves = { ArrowRight: [0, 1], ArrowLeft: [0, -1], ArrowDown: [1, 0], ArrowUp: [-1, 0] };
+        const move = moves[e.key];
+        if (!move) return;
+        e.preventDefault();
+        const rows = clamp(table.rows + move[0], 1, GRID_ROWS);
+        const cols = clamp(table.cols + move[1], 1, GRID_COLS);
+        paintTable(rows, cols);
+        cellAt(rows, cols).focus();
+    });
+
+    $('tableAlign').addEventListener('click', (e) => {
+        const button = e.target.closest('[data-align]');
+        if (!button) return;
+        table.align = button.dataset.align;
+        $('tableAlign').querySelectorAll('[data-align]').forEach((el) => {
+            el.setAttribute('aria-pressed', String(el === button));
+        });
+    });
+
+    function openTablePicker() {
+        paintTable(table.rows, table.cols);
+        popover.open($('tablePicker'), $('tableButton'), {
+            onOpen: () => cellAt(table.rows, table.cols).focus()
+        });
+    }
+
+    // ========================================================================
+    // Commands (toolbar, menus, shortcuts)
+    // ========================================================================
+
+    const actions = {
+        new: newDocument,
+        import: () => fileInput.click(),
+        export: exportDocument,
+        undo: () => editor.undo(),
+        redo: () => editor.redo(),
+        bold: () => commands.toggleInline('bold'),
+        italic: () => commands.toggleInline('italic'),
+        strike: () => commands.toggleInline('strike'),
+        highlight: () => commands.toggleInline('highlight'),
+        heading: (el) => commands.setHeading(Number(el.dataset.level)),
+        link: () => openLinkDialog(false),
+        image: () => openLinkDialog(true),
+        table: openTablePicker,
+        code: () => commands.codeBlock(),
+        math: () => commands.mathBlock(),
+        quote: () => commands.toggleQuote(),
+        ul: () => commands.toggleList('ul'),
+        ol: () => commands.toggleList('ol'),
+        task: () => commands.toggleList('task'),
+        toc: () => commands.insertToc(),
+        hr: () => commands.insertRule(),
+        view: (el) => setView(el.dataset.mode),
+        'toggle-sync': () => setSync(!state.sync),
+        'toggle-theme': () => setTheme(currentTheme() === 'dark' ? 'light' : 'dark'),
+        'font-inc': () => setFontSize(state.fontSize + FONT_STEP),
+        'font-dec': () => setFontSize(state.fontSize - FONT_STEP)
+    };
+
+    function run(name, el) {
+        const action = actions[name];
+        if (action) action(el || {});
+    }
+
+    document.addEventListener('click', (e) => {
+        const el = e.target.closest('[data-command]');
+        if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return;
+
+        const open = popover.current();
+        const fromMenu = open && el.closest('[role="menu"]');
+        if (fromMenu) popover.close(false);
+        run(el.dataset.command, el);
+
+        // Commands that don't move focus hand it back to the menu button
+        if (fromMenu && (!document.activeElement || document.activeElement === document.body)) {
+            open.anchor.focus();
+        }
+    });
+
+    // Keep the editor focused (and its selection visible) when using the toolbar
+    toolbar.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.tb')) e.preventDefault();
+    });
+
+    textarea.addEventListener('keydown', (e) => {
+        if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+        const key = e.key.toLowerCase();
+        let name = null;
+        if (key === 'z') name = e.shiftKey ? 'redo' : 'undo';
+        else if (key === 'y' && !e.shiftKey) name = 'redo';
+        else if (key === 'b' && !e.shiftKey) name = 'bold';
+        else if (key === 'i' && !e.shiftKey) name = 'italic';
+        else if (key === 'k' && !e.shiftKey) name = 'link';
+        if (name) {
+            e.preventDefault();
+            run(name);
+        }
+    });
+
+    // Toolbar: one tab stop, arrow keys move between buttons
+    const toolbarButtons = Array.from(toolbar.querySelectorAll(':scope > button'));
+
+    function setToolbarTabStop(button) {
+        toolbarButtons.forEach((el) => { el.tabIndex = el === button ? 0 : -1; });
+    }
+
+    toolbar.addEventListener('focusin', (e) => {
+        if (toolbarButtons.includes(e.target)) setToolbarTabStop(e.target);
+    });
+
+    toolbar.addEventListener('keydown', (e) => {
+        const index = toolbarButtons.indexOf(e.target);
+        if (index === -1) return;
+        let next = -1;
+        if (e.key === 'ArrowRight') next = (index + 1) % toolbarButtons.length;
+        else if (e.key === 'ArrowLeft') next = (index - 1 + toolbarButtons.length) % toolbarButtons.length;
+        else if (e.key === 'Home') next = 0;
+        else if (e.key === 'End') next = toolbarButtons.length - 1;
+        if (next === -1) return;
+        e.preventDefault();
+        toolbarButtons[next].focus();
+    });
+
+    // Menu buttons (header menus and the paragraph style dropdown)
+    const menuOptions = new Map();
+    const menubarButtons = Array.from(document.querySelectorAll('.menubar-btn'));
+
+    function moveMenubar(button, direction) {
+        const index = menubarButtons.indexOf(button);
+        const next = menubarButtons[(index + direction + menubarButtons.length) % menubarButtons.length];
+        next.focus();
+        popover.open($(next.dataset.menu), next, menuOptions.get(next));
+    }
+
+    document.querySelectorAll('[data-menu]').forEach((button) => {
+        const panel = $(button.dataset.menu);
+        const inMenubar = button.classList.contains('menubar-btn');
+        const options = {
+            focusChecked: !inMenubar,
+            onArrow: inMenubar ? (direction) => moveMenubar(button, direction) : null,
+            onOpen: button === headingButton ? updateFormatState : null
+        };
+        menuOptions.set(button, options);
+
+        button.addEventListener('click', () => popover.toggle(panel, button, options));
+        button.addEventListener('keydown', (e) => {
+            if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+            e.preventDefault();
+            popover.open(panel, button, { ...options, focus: e.key === 'ArrowUp' ? 'last' : 'first' });
+        });
+
+        // Moving across the menubar while a menu is open switches menus
+        if (inMenubar) {
+            button.addEventListener('pointerenter', () => {
+                const open = popover.current();
+                if (open && open.anchor !== button && menubarButtons.includes(open.anchor)) {
+                    popover.open(panel, button, { ...options, focus: false });
+                }
+            });
+        }
+    });
+
+    if (IS_MAC) {
+        document.querySelectorAll('.menu-kbd').forEach((el) => { el.textContent = el.textContent.replace('Ctrl+', '⌘'); });
+        toolbarButtons.forEach((el) => { el.title = el.title.replace('Ctrl+', '⌘'); });
+    }
+
+    // ========================================================================
+    // Init
+    // ========================================================================
+
+    setToolbarTabStop(toolbarButtons[0]);
+    setTheme(currentTheme(), false);
+    setSync(state.sync);
+    setFontSize(state.fontSize);
+    setSplit(state.split, false);
+
+    const saved = store.get('doc', null);
+    if (saved && typeof saved.content === 'string') {
+        setFileName(saved.name);
+        editor.setValue(saved.content);
+    } else {
+        editor.setValue(MDE.sampleDocument);
+    }
+
+    setView(state.view);
+    state.ready = true;
+
+    // Web fonts change text metrics once they arrive
+    if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(() => {
+            editor.refreshLayout();
+            syncScroll('editor');
+        });
+    }
+})(window.MDE = window.MDE || {});
