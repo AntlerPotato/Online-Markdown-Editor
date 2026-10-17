@@ -13,7 +13,7 @@
 .markdown-preview {
     max-width: 720px;
     margin: 0 auto;
-    padding: 30px 48px 56px;
+    padding: 28px 44px 56px;
     font-family: var(--font-ui);
     font-size: var(--preview-font-size);
     line-height: 1.85;
@@ -428,10 +428,10 @@
 /* --- Table of contents --------------------------------------------------- */
 
 .markdown-preview .toc {
-    margin: 0 0 30px;
-    padding: 16px 20px 14px;
+    margin: 0 0 28px;
+    padding: 14px 18px 12px;
     border: 1px solid var(--border-soft);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-md);
     background: var(--surface-muted);
 }
 
@@ -439,7 +439,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
     font-size: 13px;
     font-weight: 600;
     letter-spacing: 0.04em;
@@ -537,6 +537,6 @@
 
 @media (max-width: 860px) {
     .markdown-preview {
-        padding: 24px 20px 40px;
+        padding: 20px 18px 36px;
     }
 }
