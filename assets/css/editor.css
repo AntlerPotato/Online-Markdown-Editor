@@ -43,6 +43,12 @@
     /* Never fake bold/italic: synthetic glyphs can change advance widths
        and push the highlighted text out of line with the caret. */
     font-synthesis: none;
+    /* Chrome compresses full-width CJK punctuation such as "）、", but where
+       a line wraps it does so differently in a textarea than in normal
+       text, so a long line could wrap one row later in one layer and every
+       line below would be off by a row. Keep both layers untouched. */
+    text-spacing-trim: space-all;
+    text-autospace: no-autospace;
 }
 
 .code-backdrop {

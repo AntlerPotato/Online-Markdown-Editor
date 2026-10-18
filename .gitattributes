@@ -1,0 +1,21 @@
+# Store and check out text files with LF line endings on every platform, so
+# editing on Windows doesn't show every line of a file as changed.
+* text=auto eol=lf
+
+# Nicer diff headers (the enclosing rule or heading is shown for each change)
+*.css   diff=css
+*.html  diff=html
+*.md    diff=markdown
+
+# Binary files: never convert line endings or diff them as text
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.pdf   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary

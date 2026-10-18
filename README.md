@@ -59,6 +59,23 @@ To deploy it, upload the folder to any static host (GitHub Pages, Netlify, Verce
 
 Libraries (marked, highlight.js, KaTeX) and fonts load from CDNs, so the first visit needs an internet connection.
 
+## Working on the code
+
+Clone the repository rather than downloading a ZIP, so your edits can be committed and pushed back:
+
+```bash
+git clone https://github.com/AntlerPotato/Online-Markdown-Editor.git
+cd Online-Markdown-Editor
+```
+
+If you prefer not to use the command line, GitHub Desktop's **File › Clone repository** does the same.
+
+There is nothing to install or build: edit the files, refresh the browser, then commit. A few files keep everyone's setup consistent:
+
+- `.gitattributes` stores text files with LF line endings on every platform, so editing on Windows doesn't mark every line as changed
+- `.editorconfig` tells most editors to use UTF-8, LF and 4-space indentation, matching the existing code (VS Code needs the EditorConfig extension)
+- `.gitignore` keeps OS and editor clutter (`.DS_Store`, `Thumbs.db`, `.vscode/`, `.idea/`, …) out of commits
+
 ## Your data
 
 Documents are autosaved to your browser's `localStorage`. They never leave your device and are not synced anywhere. Clearing site data or using a private window removes them, so use **导出** (Export) to keep a `.md` copy of anything important.
@@ -86,6 +103,9 @@ assets/
     app.js              Wires everything together (including the toolbar overflow)
 docs/
   screenshot.png
+.gitattributes          Line endings (LF) and binary file rules
+.editorconfig           Shared editor settings
+.gitignore              Files kept out of the repository
 ```
 
 ## License
