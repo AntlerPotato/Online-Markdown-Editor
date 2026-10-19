@@ -426,6 +426,8 @@
 .markdown-preview th {
     font-weight: 600;
     color: var(--text-strong);
+    /* Short CJK headers would otherwise break one character per line */
+    white-space: nowrap;
 }
 
 .markdown-preview tbody tr:last-child td {
