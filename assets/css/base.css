@@ -173,6 +173,12 @@ svg {
     padding: 0;
 }
 
+/* …with one labelled segment (实时) */
+.segmented-icon > .segment-label {
+    width: auto;
+    padding: 0 10px 0 8px;
+}
+
 /* Full-width segments (table alignment) */
 .segmented-sm {
     border-radius: var(--radius-control);

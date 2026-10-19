@@ -8,7 +8,8 @@
     --accent: #2E7C84;
     --accent-soft: color-mix(in oklab, var(--accent) 9%, transparent);
     --accent-tint: color-mix(in oklab, var(--accent) 18%, var(--surface));
-    --accent-ring: color-mix(in oklab, var(--accent) 14%, transparent);
+    --accent-ring: color-mix(in oklab, var(--accent) 22%, transparent);
+    --on-accent: #FFFFFF;           /* text on a solid accent background */
 
     /* Surfaces */
     --bg: #F3F5F5;
@@ -36,6 +37,7 @@
     --muted: #545D61;
     --muted-2: #646E72;
     --faint: #737D81;
+    --syntax: #68727A;              /* Markdown markers shown while editing a block */
     --marker: #8A9498;
     --dot: #B5BEC1;
     --switch-off: #C3CCCF;
@@ -103,6 +105,8 @@
 :root[data-theme="dark"] {
     --accent: #5FB3BB;
     --accent-soft: color-mix(in oklab, var(--accent) 12%, transparent);
+    --accent-ring: color-mix(in oklab, var(--accent) 26%, transparent);
+    --on-accent: #0E1213;
 
     --bg: #0E1213;
     --surface: #161B1D;
@@ -127,6 +131,7 @@
     --muted: #9AA6AA;
     --muted-2: #8E9A9E;
     --faint: #75828A;
+    --syntax: #7F8C93;
     --marker: #75828A;
     --dot: #4A5559;
     --switch-off: #3B474B;

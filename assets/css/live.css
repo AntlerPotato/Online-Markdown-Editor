@@ -1,0 +1,391 @@
+/* ==========================================================================
+   Live mode: rendered blocks, the block being edited (its Markdown source,
+   styled like the rendered text), and the code and formula editors
+   ========================================================================== */
+
+.live-scroll:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+.live-doc {
+    max-width: 760px;
+    padding: 40px 56px 140px 72px;
+}
+
+/* Typewriter mode: the last line can still scroll up to the middle */
+.live-doc[data-typewriter="on"] {
+    padding-bottom: 50vh;
+}
+
+/* An empty document */
+.live-doc.is-empty:not(.has-active)::before {
+    content: attr(data-placeholder);
+    color: var(--faint);
+    cursor: text;
+}
+
+/* --- Blocks ---------------------------------------------------------------- */
+
+/* Margins live on the block, so they collapse between blocks as they would
+   between the elements of one rendered page */
+.lv-block {
+    position: relative;
+    margin: 0 0 1em;
+    border-radius: 6px;
+    cursor: text;
+    /* Off-screen blocks skip layout and paint; "auto" remembers their size */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 28px;
+    transition: opacity 0.2s ease;
+}
+
+.live-doc > .lv-block:first-child {
+    margin-top: 0;
+}
+
+.live-doc .lv-block > :first-child {
+    margin-top: 0;
+}
+
+.live-doc .lv-block > :last-child {
+    margin-bottom: 0;
+}
+
+.lv-k-h1 { margin: 2.64em 0 0.88em; }
+.lv-k-h2 { margin: 2.7em 0 1.07em; }
+.lv-k-h3 { margin: 2.28em 0 0.9em; }
+.lv-k-h4 { margin: 2em 0 0.8em; }
+.lv-k-h5 { margin: 1.9em 0 0.75em; }
+.lv-k-h6 { margin: 1.8em 0 0.7em; }
+.lv-k-hr { margin: 1.75em 0; }
+
+/* The block being edited is on screen, and its focus ring must not be clipped */
+.lv-block.is-active {
+    content-visibility: visible;
+}
+
+.lv-block:not(.is-active):hover {
+    background: color-mix(in oklab, var(--accent) 4%, transparent);
+    box-shadow: 0 0 0 6px color-mix(in oklab, var(--accent) 4%, transparent);
+}
+
+.live-doc .task-check {
+    cursor: pointer;
+}
+
+/* Focus mode: everything but the block being edited fades (live.js only
+   turns it on while a block is being edited) */
+.live-doc[data-focus="on"] .lv-block:not(.is-active) {
+    opacity: 0.28;
+}
+
+/* Blocks that render to nothing (link definitions, comments) */
+.lv-raw {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    color: var(--syntax);
+    white-space: pre-wrap;
+}
+
+/* --- The block being edited ---------------------------------------------- */
+
+.lv-src {
+    position: relative;
+    min-height: 1.85em;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    tab-size: 4;
+    outline: none;
+    caret-color: var(--accent);
+}
+
+.lv-src.is-empty::after {
+    content: attr(data-placeholder);
+    position: absolute;
+    top: 0;
+    left: 0;
+    color: var(--faint);
+    pointer-events: none;
+}
+
+.lv-src.lv-mono {
+    font-family: var(--font-mono);
+    font-size: 0.87em;
+}
+
+.lv-src.lv-table {
+    white-space: pre;
+    overflow-x: auto;
+}
+
+/* Markdown markers; the text keeps its rendered weight, size and colour */
+.lv-src .t-mark {
+    color: var(--syntax);
+    font-weight: 400;
+    font-style: normal;
+    text-decoration: none;
+}
+
+.lv-src .t-heading {
+    font-weight: inherit;
+    color: inherit;
+}
+
+.lv-src .t-bold {
+    font-weight: 600;
+    color: var(--text-strong);
+}
+
+.lv-src .t-strike {
+    text-decoration-color: var(--muted);
+}
+
+.lv-src .t-hl {
+    padding: 1px 4px;
+    border-radius: 4px;
+}
+
+.lv-src .t-code {
+    padding: 2px 6px;
+    margin: 0 1px;
+    border-radius: 6px;
+    background: var(--inline-code-bg);
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+}
+
+.lv-src .t-math,
+.lv-src .t-url,
+.lv-src .t-html,
+.lv-src .t-list {
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+}
+
+.lv-src .t-math {
+    color: var(--link);
+}
+
+.lv-src .t-url,
+.lv-src .t-html {
+    color: var(--syntax);
+    text-decoration: none;
+}
+
+.lv-src .t-link {
+    color: var(--link);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-decoration-color: color-mix(in oklab, var(--link) 40%, transparent);
+    text-underline-offset: 3px;
+}
+
+.lv-mono .t-mark,
+.lv-mono .t-code,
+.lv-mono .t-math,
+.lv-mono .t-url,
+.lv-mono .t-html,
+.lv-mono .t-list {
+    font-size: inherit;
+}
+
+/* An image stays visible under its source line while it is edited */
+.lv-media {
+    margin-top: 8px;
+}
+
+.lv-media img {
+    display: block;
+    outline: 1px solid var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-ring);
+}
+
+/* --- Code block editor ----------------------------------------------------- */
+/* A transparent textarea over the highlighted code, as in the source editor */
+
+.markdown-preview .lv-code {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.lv-lang {
+    width: 12em;
+    max-width: 50%;
+    height: 26px;
+    padding: 0 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: 7px;
+    background: var(--surface);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--text-control);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.lv-lang::placeholder {
+    color: var(--faint);
+}
+
+.lv-lang:focus,
+.lv-lang:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.lv-code-area {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+}
+
+.markdown-preview .lv-code-view,
+.lv-code-input {
+    margin: 0;
+    padding: 0 16px 0 0;
+    border: 0;
+    font: inherit;
+    line-height: inherit;
+    letter-spacing: normal;
+    tab-size: 4;
+    white-space: pre;
+    font-kerning: none;
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "calt" 0;
+    font-synthesis: none;
+}
+
+.markdown-preview .lv-code-view {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.lv-code-input {
+    position: relative;
+    display: block;
+    width: 100%;
+    min-height: 24px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    resize: none;
+    outline: none;
+    background: transparent;
+    color: transparent;
+    caret-color: var(--text);
+    -webkit-text-fill-color: transparent;
+}
+
+.lv-code-input::selection {
+    background: var(--selection);
+    color: transparent;
+}
+
+/* --- Formula block editor -------------------------------------------------- */
+
+.lv-math {
+    overflow: hidden;
+    border: 1px solid var(--accent);
+    border-radius: 12px;
+    background: var(--code-bg);
+    box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.lv-math-head {
+    height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--code-head-border);
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.lv-math-lang {
+    font-family: var(--font-mono);
+    color: var(--text-control);
+}
+
+.lv-math-input {
+    display: block;
+    width: 100%;
+    padding: 10px 16px;
+    border: 0;
+    outline: none;
+    resize: none;
+    overflow: hidden;
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 0.87em;
+    line-height: 24px;
+    color: var(--text-control);
+    caret-color: var(--accent);
+}
+
+.lv-math-preview {
+    position: relative;
+    min-height: 64px;
+    padding: 22px 16px 6px;
+    overflow-x: auto;
+    border-top: 1px dashed var(--code-border);
+    background: var(--surface);
+}
+
+.lv-math-tag {
+    position: absolute;
+    top: 8px;
+    left: 12px;
+    font-size: 11.5px;
+    color: var(--muted);
+}
+
+.lv-math-out {
+    text-align: center;
+}
+
+.lv-math-out .katex-display {
+    margin: 0;
+    padding: 8px 0;
+}
+
+.lv-math-empty {
+    font-size: 13px;
+    color: var(--faint);
+}
+
+/* --- Inline formula preview -------------------------------------------- */
+
+.lv-bubble {
+    position: absolute;
+    z-index: 4;
+    padding: 6px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow-pop);
+    color: var(--text-strong);
+    font-size: var(--preview-font-size);
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.lv-bubble .katex {
+    font-size: 1.15em !important;
+}
+
+/* --- Small screens --------------------------------------------------------- */
+
+@media (max-width: 860px) {
+    .live-doc {
+        padding: 24px 20px 96px 28px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .lv-block {
+        transition: none;
+    }
+}
