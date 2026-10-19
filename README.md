@@ -1,12 +1,21 @@
 # Online Markdown Editor
 
-A lightweight Markdown editor that runs entirely in the browser: live preview on the left, source on the right, with math, code highlighting and a table of contents. There is no build step and no server: open `index.html` and start writing.
+A lightweight Markdown editor that runs entirely in the browser. Write in live mode, where the block you are editing shows its Markdown and everything else stays rendered, or use the source, split and preview views. Math, code highlighting and a table of contents are built in. There is no build step and no server: open `index.html` and start writing.
 
 <img width="1440" height="900" alt="Markdown 编辑器界面：左侧预览，右侧编辑" src="docs/screenshot.png" />
 
 ## Features
 
-**Writing**
+**Live mode (实时)**
+- The document is shown rendered; the block the caret is in shows its Markdown markers, keeping its size, weight and colour, and is rendered again as soon as the caret leaves it
+- Click a block to edit it there; the arrow keys move between blocks. Enter starts a new paragraph (or continues a list or quote), Shift+Enter adds a line break, Esc stops editing
+- Code blocks are edited in a code editor with line numbers and an editable language; formula blocks show a live preview under their LaTeX, and an inline formula shows one while the caret is in it
+- Click a task's checkbox to tick it; Ctrl/⌘-click a link to open it
+- Typing `` ``` `` or `$$` on a line of its own and pressing Enter creates a code or formula block
+- 打字机 (typewriter) keeps the caret line in the middle of the screen; 专注 (focus) fades every block but the one being edited
+- Fast on long documents: only the edited block is re-rendered, rendered blocks are cached, and off-screen blocks skip layout
+
+**Source editing**
 - Editor with line numbers, Markdown syntax highlighting and current-line highlight
 - A single top bar: the logo opens the file menu (new, import), followed by the formatting tools, the save state, view modes, theme and export
 - Formatting tools: undo/redo, paragraph style (H1–H6), bold, italic, strikethrough, highlight, links, images, tables, code blocks, formulas, quotes, lists, task lists, table of contents, horizontal rules
@@ -15,13 +24,13 @@ A lightweight Markdown editor that runs entirely in the browser: live preview on
 - Toolbar and menus are fully usable from the keyboard
 
 **Preview**
-- Math via KaTeX, code blocks via highlight.js (with line numbers and a copy button)
+- Math via KaTeX, code blocks via highlight.js (with line numbers and a copy button); both are downloaded only once a document contains a formula or a code block
 - `[TOC]` table of contents that marks the section you are reading
 - Synchronised scrolling between preview and source, anchored on headings
 
 **Workspace**
-- Edit-only, split and preview-only views, with a draggable divider
-- Light and dark themes; the status bar holds the caret position, word and line count, reading time, the sync-scroll switch and the font size
+- Live, source, split and preview views, with a draggable divider in the split view
+- Light and dark themes; the status bar holds the block type (in live mode), the caret position, word and line count, reading time, the typewriter, focus and sync-scroll switches and the font size
 - Autosave in the browser, plus import and export of `.md` files. The save indicator next to the view switch shows the file name on hover and stays expanded if saving fails
 
 ## Markdown extras
@@ -57,7 +66,7 @@ python3 -m http.server 8000
 
 To deploy it, upload the folder to any static host (GitHub Pages, Netlify, Vercel, IPFS, etc.).
 
-Libraries (marked, highlight.js, KaTeX) and fonts load from CDNs, so the first visit needs an internet connection.
+Libraries (marked, highlight.js, KaTeX) and fonts load from CDNs, so the first visit needs an internet connection. highlight.js and KaTeX are fetched the first time a document needs them; offline, code shows unhighlighted and formulas as their TeX source.
 
 ## Working on the code
 
@@ -92,12 +101,15 @@ assets/
     menus.css           Menus (file, paragraph style, more tools), table picker, link dialog
     editor.css          Source editor (transparent textarea over a highlighted backdrop)
     preview.css         Rendered Markdown, code theme, KaTeX tweaks
+    live.css            Live mode: blocks, the block being edited, code and formula editors
   js/
     store.js            Safe localStorage wrapper (settings and autosave)
     sample.js           Document shown on first visit
+    loader.js           Loads highlight.js and KaTeX on first use
     markdown.js         Markdown → HTML (marked renderer, math, TOC)
     syntax.js           Markdown syntax highlighting for the editor
-    editor.js           Editor component: backdrop, caret tracking, undo/redo
+    editor.js           Editor component: backdrop, caret tracking, undo/redo; holds the document for every view
+    live.js             Live mode: splits the document into blocks, caches their HTML, edits one block at a time
     commands.js         Formatting commands (wrap, headings, lists, tables, links)
     popover.js          Menu and popover positioning and keyboard handling
     app.js              Wires everything together (including the toolbar overflow)

@@ -1,5 +1,9 @@
 // Source editor: a plain <textarea> layered over a highlighted backdrop
 // (line numbers, syntax colours, current line), with its own undo history.
+// The editor also holds the document for live mode: while live mode is on
+// it is "detached" (hidden, never focused) and keeps the text and selection
+// in plain variables, since rewriting a large textarea on every keystroke
+// is slow; the textarea catches up when it is shown again.
 (function (MDE) {
     const IS_IOS = /iP(hone|ad|od)/.test(navigator.platform)
         || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -14,7 +18,21 @@
         let scrollbarWidth = -1;
         let gutterDigits = 0;
         let pendingSelection = null;
+        let detached = false;
+        let detachedValue = '';
+        let detachedSelection = { start: 0, end: 0 };
+        let backdropStale = false;
         const history = { stack: [], index: -1, lastKind: null, lastTime: 0 };
+
+        const currentValue = () => (detached ? detachedValue : textarea.value);
+        const selection = () => (detached
+            ? { start: detachedSelection.start, end: detachedSelection.end }
+            : { start: textarea.selectionStart, end: textarea.selectionEnd });
+
+        function select(start, end) {
+            if (detached) detachedSelection = { start, end };
+            else textarea.setSelectionRange(start, end);
+        }
 
         if (IS_IOS) container.classList.add('is-ios');
 
@@ -22,8 +40,13 @@
 
         const lineHtml = (html) => `<div class="ln">${html || '\u200b'}</div>`;
 
-        // Re-highlight, touching only the lines that changed
+        // Re-highlight, touching only the lines that changed. A hidden
+        // (detached) editor catches up when it is shown again.
         function render() {
+            if (detached) {
+                backdropStale = true;
+                return;
+            }
             const next = MDE.syntax.highlight(textarea.value);
             const prev = renderedLines;
             const max = Math.min(prev.length, next.length);
@@ -121,7 +144,7 @@
 
         // --- History --------------------------------------------------------
 
-        const snapshot = () => ({ value: textarea.value, start: textarea.selectionStart, end: textarea.selectionEnd });
+        const snapshot = () => ({ value: currentValue(), ...selection() });
 
         function record(kind, selectionBefore) {
             const now = Date.now();
@@ -160,12 +183,13 @@
         }
 
         function applyState(state) {
-            textarea.value = state.value;
-            textarea.focus({ preventScroll: true });
-            textarea.setSelectionRange(state.start, state.end);
+            if (detached) detachedValue = state.value;
+            else textarea.value = state.value;
+            if (!detached) textarea.focus({ preventScroll: true });
+            select(state.start, state.end);
             history.lastKind = null;
             render();
-            ensureCaretVisible();
+            if (!detached) ensureCaretVisible();
             if (onChange) onChange();
         }
 
@@ -228,15 +252,19 @@
         return {
             textarea,
 
-            getValue: () => textarea.value,
+            getValue: currentValue,
 
-            getSelection: () => ({ start: textarea.selectionStart, end: textarea.selectionEnd, value: textarea.value }),
+            getSelection: () => ({ ...selection(), value: currentValue() }),
+
+            // Move the selection without recording an undo step (live mode)
+            select,
 
             focus: () => textarea.focus({ preventScroll: true }),
 
             setValue(value) {
-                textarea.value = value;
-                textarea.setSelectionRange(0, 0);
+                if (detached) detachedValue = value;
+                else textarea.value = value;
+                select(0, 0);
                 textarea.scrollTop = 0;
                 history.stack = [snapshot()];
                 history.index = 0;
@@ -245,17 +273,23 @@
                 if (onChange) onChange();
             },
 
-            // Replace [start, end) with text as one undoable step
-            replaceRange(start, end, text, selStart, selEnd) {
-                const before = { start: textarea.selectionStart, end: textarea.selectionEnd };
+            // Replace [start, end) with text as one undoable step. `kind` groups
+            // typing like the textarea does ('insert', 'delete'); null leaves
+            // the change to be recorded together with the next one.
+            replaceRange(start, end, text, selStart, selEnd, kind = 'command') {
+                const before = selection();
                 if (selStart === undefined) selStart = start + text.length;
                 if (selEnd === undefined) selEnd = selStart;
-                textarea.focus({ preventScroll: true });
-                textarea.setRangeText(text, start, end, 'end');
-                textarea.setSelectionRange(selStart, selEnd);
+                if (detached) {
+                    detachedValue = detachedValue.slice(0, start) + text + detachedValue.slice(end);
+                } else {
+                    textarea.focus({ preventScroll: true });
+                    textarea.setRangeText(text, start, end, 'end');
+                }
+                select(selStart, selEnd);
                 render();
-                record('command', before);
-                ensureCaretVisible();
+                if (kind) record(kind, before);
+                if (!detached) ensureCaretVisible();
                 if (onChange) onChange();
             },
 
@@ -273,7 +307,29 @@
             refreshLayout() {
                 measureScrollbar();
                 backdrop.scrollTop = textarea.scrollTop;
-            }
+            },
+
+            // Live mode hides the textarea and edits through replaceRange/select
+            setDetached(flag) {
+                if (flag === detached) return;
+                if (flag) {
+                    detachedValue = textarea.value;
+                    detachedSelection = { start: textarea.selectionStart, end: textarea.selectionEnd };
+                    detached = true;
+                    return;
+                }
+                detached = false;
+                if (textarea.value !== detachedValue) textarea.value = detachedValue;
+                textarea.setSelectionRange(detachedSelection.start, detachedSelection.end);
+                if (backdropStale) {
+                    backdropStale = false;
+                    render();
+                } else {
+                    updateCaret();
+                }
+            },
+
+            revealCaret: () => ensureCaretVisible()
         };
     };
 })(window.MDE = window.MDE || {});

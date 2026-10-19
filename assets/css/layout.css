@@ -429,13 +429,22 @@
     background: var(--surface-sunken);
 }
 
+.pane-live {
+    flex: 1 1 0;
+    background: var(--surface);
+}
+
 /* View modes */
+.app:not([data-view="live"]) .pane-live,
+.app:not([data-view="live"]) .live-only,
+.app[data-view="live"] .pane-preview,
+.app[data-view="live"] .pane-editor,
+.app[data-view="live"] .splitter,
 .app[data-view="edit"] .pane-preview,
 .app[data-view="edit"] .splitter,
 .app[data-view="preview"] .pane-editor,
 .app[data-view="preview"] .splitter,
-.app[data-view="edit"] .sync-toggle,
-.app[data-view="preview"] .sync-toggle {
+.app:not([data-view="split"]) .sync-toggle {
     display: none;
 }
 
@@ -533,8 +542,24 @@
     gap: 14px;
 }
 
-/* Sync scroll switch */
-.sync-toggle {
+/* Block the caret is in (live mode) */
+.status-chip {
+    height: 22px;
+    padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 6px;
+    background: var(--accent-soft);
+    color: var(--link);
+    font-weight: 500;
+}
+
+.app:not([data-view="live"]) .status-chip {
+    display: none;
+}
+
+/* Switches: sync scrolling, typewriter, focus */
+.switch-toggle {
     height: 26px;
     padding: 0 6px;
     display: flex;
@@ -547,7 +572,7 @@
     font-size: 12px;
 }
 
-.sync-toggle:hover {
+.switch-toggle:hover {
     background: var(--hover);
 }
 

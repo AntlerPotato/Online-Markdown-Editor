@@ -1,4 +1,8 @@
 // Markdown rendering: marked + highlight.js + KaTeX, with [TOC] support.
+// highlight.js and KaTeX are loaded the first time a document needs them
+// (see loader.js). Until they arrive, code is shown unhighlighted and
+// formulas as their TeX source; render() reports which library it was
+// waiting for, and the caller renders again once it has loaded.
 (function (MDE) {
     const ICON_COPY = '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="13" height="13" rx="2.5"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>';
     const ICON_TOC = '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M8 12h12"/><path d="M8 18h12"/></svg>';
@@ -12,10 +16,6 @@
     ].join('|'), 'gm');
 
     const KATEX_OPTIONS = {
-        delimiters: [
-            { left: '$$', right: '$$', display: true },
-            { left: '$', right: '$', display: false }
-        ],
         throwOnError: false,
         errorColor: '#cc0000',
         strict: false,
@@ -46,6 +46,48 @@
     const renderer = new marked.Renderer();
     let headings = [];
     let usedIds = Object.create(null);
+    let needs = null;              // libraries the current render had to do without
+    let interactiveTasks = false;  // live mode lets task checkboxes be clicked
+
+    const PLAIN_LANGS = new Set(['text', 'txt', 'plain', 'plaintext']);
+
+    // TeX → HTML; shows the source until KaTeX has loaded
+    function renderMath(tex, displayMode) {
+        if (window.katex) {
+            try {
+                return katex.renderToString(tex, { ...KATEX_OPTIONS, displayMode });
+            } catch (e) {
+                return `<span class="katex-error">${escapeHtml(tex)}</span>`;
+            }
+        }
+        if (needs) needs.math = true;
+        else MDE.loader.request('katex');
+        const delimiter = displayMode ? '$$' : '$';
+        return `<span class="math-pending${displayMode ? ' is-display' : ''}">${escapeHtml(delimiter + tex + delimiter)}</span>`;
+    }
+
+    // Highlighted HTML for a code block. `auto` guesses the language when it
+    // is missing or unknown (the preview does; the live code editor doesn't).
+    function highlightCode(source, language, auto = true) {
+        if (PLAIN_LANGS.has(language) || (!language && !auto)) return { html: escapeHtml(source), language: '' };
+        if (!window.hljs) {
+            if (needs) needs.code = true;
+            else MDE.loader.request('hljs');
+            return { html: escapeHtml(source), language: '' };
+        }
+        try {
+            if (language && hljs.getLanguage(language)) {
+                return { html: hljs.highlight(source, { language, ignoreIllegals: true }).value, language };
+            }
+            if (auto) {
+                const result = hljs.highlightAuto(source);
+                return { html: result.value, language: result.language || '' };
+            }
+        } catch (e) {
+            /* fall through to plain text */
+        }
+        return { html: escapeHtml(source), language: '' };
+    }
 
     // ==highlight==
     renderer.text = function (text) {
@@ -57,13 +99,14 @@
         // Keep math placeholders in the TOC label so formulas render there too
         const label = text.replace(/<(?!!--MATH_BLOCK_)[^>]*>/g, '');
         const plain = label.replace(/<!--MATH_BLOCK_\d+-->/g, '').replace(/&[#\w]+;/g, ' ');
-        let id = plain.toLowerCase().replace(/[^\w\u4E00-\u9FA5]+/g, '-').replace(/^-+|-+$/g, '') || 'section';
+        const baseId = plain.toLowerCase().replace(/[^\w\u4E00-\u9FA5]+/g, '-').replace(/^-+|-+$/g, '') || 'section';
+        let id = baseId;
         if (usedIds[id]) {
             id = `${id}-${usedIds[id]++}`;
         } else {
             usedIds[id] = 1;
         }
-        headings.push({ level, id, label });
+        headings.push({ level, id, baseId, label });
         return `<h${level} id="${id}">${text}</h${level}>\n`;
     };
 
@@ -75,19 +118,7 @@
         }
 
         const source = code.replace(/\n$/, '');
-        let highlighted;
-        let detected = '';
-        try {
-            if (language && hljs.getLanguage(language)) {
-                highlighted = hljs.highlight(source, { language, ignoreIllegals: true }).value;
-            } else {
-                const result = hljs.highlightAuto(source);
-                highlighted = result.value;
-                detected = result.language || '';
-            }
-        } catch (e) {
-            highlighted = escapeHtml(source);
-        }
+        const { html: highlighted, language: detected } = highlightCode(source, language);
 
         const label = language || detected || 'text';
         const lineNumbers = source.split('\n').map((_, i) => i + 1).join('\n');
@@ -114,7 +145,7 @@
     };
 
     renderer.checkbox = function (checked) {
-        return `<input type="checkbox" class="task-check" disabled${checked ? ' checked' : ''}>`;
+        return `<input type="checkbox" class="task-check"${interactiveTasks ? '' : ' disabled'}${checked ? ' checked' : ''}>`;
     };
 
     // Tables scroll inside a rounded wrapper
@@ -133,7 +164,7 @@
 
     // --- Table of contents --------------------------------------------------
 
-    function buildToc() {
+    function buildToc(headings) {
         if (headings.length === 0) return '';
         let html = `<nav class="toc" aria-label="目录"><div class="toc-title">${ICON_TOC}目录</div>`;
         const stack = [];
@@ -199,8 +230,22 @@
 
     function restoreMath(html, blocks) {
         return html.replace(/<p>\s*<!--MATH_BLOCK_(\d+)-->\s*<\/p>|<!--MATH_BLOCK_(\d+)-->/g, (full, inParagraph, inline) => {
-            return escapeHtml(blocks[parseInt(inParagraph || inline, 10)]);
+            const math = blocks[parseInt(inParagraph || inline, 10)];
+            const display = math.startsWith('$$');
+            const tex = display ? math.slice(2, -2) : math.slice(1, -1);
+            const out = renderMath(tex, display);
+            return inParagraph && !display ? `<p>${out}</p>` : out;
         });
+    }
+
+    // Formulas written over several lines ($$ … $$), as [start, end) offsets
+    function mathSpans(source) {
+        const spans = [];
+        source.replace(MATH_RE, (match, fence, fenceMark, code, ticks, math, offset) => {
+            if (math && math.includes('\n')) spans.push({ start: offset, end: offset + match.length });
+            return match;
+        });
+        return spans;
     }
 
     // Source line (0-based) of every top-level heading, in document order
@@ -222,39 +267,42 @@
 
     // --- Public API ---------------------------------------------------------
 
-    function render(source) {
+    // options.toc: headings for [TOC] (live mode renders one block at a time,
+    // so it passes the whole document's); options.tasks: clickable checkboxes
+    function render(source, options = {}) {
         headings = [];
         usedIds = Object.create(null);
+        needs = { math: false, code: false };
+        interactiveTasks = !!options.tasks;
 
         const { text, blocks, shifts } = extractMath(source);
         const tokens = marked.lexer(text);
         const headingLines = headingSourceLines(tokens, shifts);
         let html = marked.parser(tokens);
+        const ownHeadings = headings;
+        ownHeadings.forEach((item) => { item.label = restoreMath(item.label, blocks); });
 
         if (html.includes('[TOC]')) {
-            const toc = buildToc();
+            const toc = buildToc(options.toc || ownHeadings);
             html = html
                 .replace(/<p>\[TOC\]<\/p>/g, toc)
                 .replace(/<p>\[TOC\]<br>\n?/g, toc + '<p>');
         }
 
         html = restoreMath(html, blocks);
-        return { html, headingLines };
+        const result = { html, headingLines, headings: ownHeadings, needs };
+        if (needs.math) MDE.loader.request('katex');
+        if (needs.code) MDE.loader.request('hljs');
+        needs = null;
+        interactiveTasks = false;
+        return result;
     }
 
     function renderInto(element, source) {
         const { html, headingLines } = render(source);
         element.innerHTML = html;
-
-        if (window.renderMathInElement) {
-            try {
-                renderMathInElement(element, KATEX_OPTIONS);
-            } catch (e) {
-                console.warn('KaTeX rendering error:', e);
-            }
-        }
         return headingLines;
     }
 
-    MDE.markdown = { render, renderInto };
+    MDE.markdown = { render, renderInto, renderMath, highlightCode, mathSpans, escapeHtml, ICON_COPY };
 })(window.MDE = window.MDE || {});

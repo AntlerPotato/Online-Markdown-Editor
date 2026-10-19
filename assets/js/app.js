@@ -7,6 +7,8 @@
     const textarea = $('editor');
     const preview = $('preview');
     const previewScroll = $('previewScroll');
+    const liveDoc = $('live');
+    const liveScroll = $('liveScroll');
     const panes = $('panes');
     const splitter = $('splitter');
     const toolbar = $('toolbar');
@@ -22,14 +24,16 @@
     const FONT_MIN = 10;
     const FONT_MAX = 24;
     const FONT_STEP = 2;
-    const VIEWS = ['edit', 'split', 'preview'];
+    const VIEWS = ['live', 'edit', 'split', 'preview'];
     const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
     const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
     const state = {
-        view: VIEWS.includes(store.get('view')) ? store.get('view') : 'split',
+        view: VIEWS.includes(store.get('view')) ? store.get('view') : 'live',
         sync: store.get('sync', true) !== false,
+        focusMode: store.get('focusMode', false) === true,
+        typewriter: store.get('typewriter', false) === true,
         fontSize: clamp(Number(store.get('fontSize', 14)) || 14, FONT_MIN, FONT_MAX),
         split: clamp(Number(store.get('split', 50)) || 50, 20, 80),
         fileName: DEFAULT_NAME,
@@ -54,6 +58,16 @@
     });
     const commands = MDE.createCommands(editor);
 
+    // Copy buttons and links first; other clicks on the document are edits
+    liveDoc.addEventListener('click', (e) => handleDocumentClick(e, liveDoc, liveScroll, true));
+    const live = MDE.createLive({
+        root: liveDoc,
+        scroller: liveScroll,
+        editor,
+        onCaret: handleLiveCaret,
+        onRender: scheduleActiveHeading
+    });
+
     // ========================================================================
     // Document state
     // ========================================================================
@@ -71,6 +85,7 @@
         updateHistoryButtons();
         scheduleStats();
         schedulePreview();
+        live.update();
         if (state.ready) scheduleSave();
     }
 
@@ -93,6 +108,20 @@
     function handleCaret({ line, col }) {
         $('statusCaret').textContent = `第 ${line + 1} 行，第 ${col + 1} 列`;
         updateFormatState();
+    }
+
+    // Live mode also names the kind of block the caret is in
+    function handleLiveCaret(info) {
+        const chip = $('statusBlock');
+        chip.textContent = info.label;
+        chip.hidden = !info.label;
+        handleCaret(info);
+    }
+
+    // The editing surface of the current view
+    function focusEditor() {
+        if (state.view === 'live') live.focus();
+        else editor.focus();
     }
 
     const formatButtons = ['bold', 'italic', 'strike', 'highlight'].map((name) => toolbar.querySelector(`[data-command="${name}"]`));
@@ -124,7 +153,7 @@
     // ========================================================================
 
     function schedulePreview() {
-        if (state.view === 'edit') {
+        if (state.view === 'edit' || state.view === 'live') {
             state.previewDirty = true;
             return;
         }
@@ -140,26 +169,29 @@
         syncScroll('editor');
     }
 
-    // Distance of an element from the top of the preview's scrollable content
-    function contentTop(el) {
-        return el.getBoundingClientRect().top - previewScroll.getBoundingClientRect().top + previewScroll.scrollTop;
+    // Distance of an element from the top of a scroller's content
+    function contentTop(el, scroller = previewScroll) {
+        return el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
     }
 
-    // Highlight the TOC entry of the section currently at the top of the preview
+    // Highlight the TOC entry of the section currently at the top of the
+    // preview (or of the live document)
     function updateActiveHeading() {
-        const links = preview.querySelectorAll('.toc a');
+        const container = state.view === 'live' ? liveDoc : preview;
+        const scroller = state.view === 'live' ? liveScroll : previewScroll;
+        const links = container.querySelectorAll('.toc a');
         if (!links.length) return;
-        const headings = preview.querySelectorAll('h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]');
+        const headings = container.querySelectorAll('h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]');
         if (!headings.length) return;
 
-        const atBottom = previewScroll.scrollTop >= previewScroll.scrollHeight - previewScroll.clientHeight - 2;
+        const atBottom = scroller.scrollTop >= scroller.scrollHeight - scroller.clientHeight - 2;
         let active = headings[0];
         if (atBottom) {
             active = headings[headings.length - 1];
         } else {
-            const line = previewScroll.scrollTop + 48;
+            const line = scroller.scrollTop + 48;
             for (const heading of headings) {
-                if (contentTop(heading) <= line) active = heading;
+                if (contentTop(heading, scroller) <= line) active = heading;
                 else break;
             }
         }
@@ -174,30 +206,39 @@
         });
     }
 
-    preview.addEventListener('click', (e) => {
+    // Copy buttons and links in the preview and the live document. In live
+    // mode a plain click on a link edits it; Ctrl/⌘-click (or any click in
+    // the table of contents) follows it.
+    function handleDocumentClick(e, container, scroller, isLive) {
         const copyButton = e.target.closest('.code-copy');
         if (copyButton) {
+            e.preventDefault();
             copyCode(copyButton);
             return;
         }
 
         const link = e.target.closest('a[href]');
         if (!link) return;
+        if (isLive && !link.closest('.toc') && !(e.ctrlKey || e.metaKey)) return;
         const href = link.getAttribute('href');
         e.preventDefault();
         if (href.startsWith('#')) {
             let id = href.slice(1);
             try { id = decodeURIComponent(id); } catch (err) { /* keep raw id */ }
-            const target = preview.querySelector('#' + CSS.escape(id));
-            if (target) previewScroll.scrollTo({ top: contentTop(target) - 16, behavior: 'smooth' });
+            const target = container.querySelector('#' + CSS.escape(id));
+            if (target) scroller.scrollTo({ top: contentTop(target, scroller) - 16, behavior: 'smooth' });
         } else {
             // Keep the editor open; external links go to a new tab
             window.open(link.href, '_blank', 'noopener');
         }
-    });
+    }
+
+    preview.addEventListener('click', (e) => handleDocumentClick(e, preview, previewScroll, false));
 
     async function copyCode(button) {
-        const code = button.closest('.code-block').querySelector('code').textContent;
+        const block = button.closest('.code-block');
+        const input = block.querySelector('textarea');
+        const code = input ? input.value : block.querySelector('code').textContent;
         let copied = false;
         try {
             await navigator.clipboard.writeText(code);
@@ -287,9 +328,10 @@
         syncScroll('preview');
         scheduleActiveHeading();
     }, { passive: true });
+    liveScroll.addEventListener('scroll', scheduleActiveHeading, { passive: true });
 
     // ========================================================================
-    // Settings: view mode, sync, theme, font size, split
+    // Settings: view mode, sync, focus and typewriter, theme, font size, split
     // ========================================================================
 
     function setChecked(selector, value) {
@@ -301,6 +343,7 @@
 
     function setView(mode) {
         if (!VIEWS.includes(mode)) return;
+        const previous = state.ready ? state.view : null;
         state.view = mode;
         app.dataset.view = mode;
         store.set('view', mode);
@@ -308,6 +351,18 @@
             const role = el.getAttribute('role') || '';
             el.setAttribute(role === 'menuitemradio' ? 'aria-checked' : 'aria-pressed', String(el.dataset.mode === mode));
         });
+
+        // Live mode edits through the (hidden) source editor
+        if (mode === 'live') {
+            editor.setDetached(true);
+            live.show({ focus: previous !== null && previous !== 'live' });
+            scheduleActiveHeading();
+            return;
+        }
+        if (previous === 'live') live.hide();
+        editor.setDetached(false);
+        if (previous === 'live' && mode !== 'preview') editor.revealCaret();
+
         if (mode !== 'edit' && state.previewDirty) renderPreview();
         else syncScroll('editor');
     }
@@ -317,6 +372,20 @@
         store.set('sync', on);
         setChecked('[data-command="toggle-sync"]', on);
         if (on) syncScroll('editor');
+    }
+
+    function setFocusMode(on) {
+        state.focusMode = on;
+        store.set('focusMode', on);
+        setChecked('[data-command="toggle-focus"]', on);
+        live.setFocusMode(on);
+    }
+
+    function setTypewriter(on) {
+        state.typewriter = on;
+        store.set('typewriter', on);
+        setChecked('[data-command="toggle-typewriter"]', on);
+        live.setTypewriter(on);
     }
 
     const currentTheme = () => (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
@@ -440,8 +509,9 @@
     function newDocument() {
         if (editor.getValue() && !confirm('确定要新建文档吗？当前内容将会丢失。')) return;
         setFileName(DEFAULT_NAME);
+        live.stopEditing();
         editor.setValue('');
-        editor.focus();
+        focusEditor();
     }
 
     fileInput.addEventListener('change', () => {
@@ -450,9 +520,11 @@
         const reader = new FileReader();
         reader.onload = () => {
             setFileName(file.name);
+            live.stopEditing();
             editor.setValue(String(reader.result));
             previewScroll.scrollTop = 0;
-            editor.focus();
+            liveScroll.scrollTop = 0;
+            focusEditor();
         };
         reader.readAsText(file);
         fileInput.value = '';
@@ -524,7 +596,7 @@
 
     linkDialog.querySelector('[data-dismiss]').addEventListener('click', () => {
         popover.close(false);
-        editor.focus();
+        focusEditor();
     });
 
     // ========================================================================
@@ -633,14 +705,24 @@
         hr: () => commands.insertRule(),
         view: (el) => setView(el.dataset.mode),
         'toggle-sync': () => setSync(!state.sync),
+        'toggle-focus': () => setFocusMode(!state.focusMode),
+        'toggle-typewriter': () => setTypewriter(!state.typewriter),
         'toggle-theme': () => setTheme(currentTheme() === 'dark' ? 'light' : 'dark'),
         'font-inc': () => setFontSize(state.fontSize + FONT_STEP),
         'font-dec': () => setFontSize(state.fontSize - FONT_STEP)
     };
 
+    // Commands that edit the document (in live mode they act where the caret is)
+    const EDIT_COMMANDS = new Set([
+        'undo', 'redo', 'bold', 'italic', 'strike', 'highlight', 'heading', 'link', 'image', 'table',
+        'code', 'math', 'quote', 'ul', 'ol', 'task', 'toc', 'hr'
+    ]);
+
     function run(name, el) {
         const action = actions[name];
-        if (action) action(el || {});
+        if (!action) return;
+        if (state.view === 'live' && EDIT_COMMANDS.has(name)) live.beforeCommand();
+        action(el || {});
     }
 
     document.addEventListener('click', (e) => {
@@ -663,8 +745,8 @@
         if (e.target.closest('.tb')) e.preventDefault();
     });
 
-    textarea.addEventListener('keydown', (e) => {
-        if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    function handleShortcut(e) {
+        if (!(e.ctrlKey || e.metaKey) || e.altKey || e.isComposing) return;
         const key = e.key.toLowerCase();
         let name = null;
         if (key === 'z') name = e.shiftKey ? 'redo' : 'undo';
@@ -676,6 +758,12 @@
             e.preventDefault();
             run(name);
         }
+    }
+
+    textarea.addEventListener('keydown', handleShortcut);
+    liveDoc.addEventListener('keydown', (e) => {
+        // The code-language field is an ordinary text field
+        if (!e.target.classList.contains('lv-lang')) handleShortcut(e);
     });
 
     // Toolbar: one tab stop, arrow keys move between the visible buttons
@@ -780,6 +868,8 @@
     fitToolbar();
     setTheme(currentTheme(), false);
     setSync(state.sync);
+    setFocusMode(state.focusMode);
+    setTypewriter(state.typewriter);
     setFontSize(state.fontSize);
     setSplit(state.split, false);
 
@@ -793,6 +883,13 @@
 
     setView(state.view);
     state.ready = true;
+
+    // highlight.js and KaTeX load on first use; render again once they arrive
+    MDE.loader.onLoad(() => {
+        state.previewDirty = true;
+        if (state.view === 'split' || state.view === 'preview') renderPreview();
+        live.refreshLibraries();
+    });
 
     // Web fonts change text metrics once they arrive
     if (document.fonts && document.fonts.ready) {

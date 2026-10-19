@@ -38,7 +38,8 @@
         {
             start: '![',
             re: /(!?\[)([^\]\n]*)(\]\()([^)\s]*)((?:\s+"[^"\n]*")?\))/y,
-            render: (m, pipes) => mark(m[1]) + inline(m[2], pipes) + mark(m[3]) + wrap('t-url', esc(m[4])) + mark(m[5])
+            render: (m, pipes) => mark(m[1]) + (m[1] === '[' ? wrap('t-link', inline(m[2], pipes)) : inline(m[2], pipes))
+                + mark(m[3]) + wrap('t-url', esc(m[4])) + mark(m[5])
         },
         // Inline HTML and comments
         { start: '<', re: /<!--.*?-->|<\/?[A-Za-z][^<>\n]*>/y, render: (m) => wrap('t-html', esc(m[0])) },
@@ -144,7 +145,7 @@
 
     function listOrText(line) {
         const m = LIST.exec(line);
-        if (m) return esc(m[1]) + mark(m[2] + m[3] + (m[4] || '')) + inline(m[5]);
+        if (m) return esc(m[1]) + wrap('t-list', mark(m[2] + m[3] + (m[4] || ''))) + inline(m[5]);
         return inline(line, /^\s*\|/.test(line));
     }
 
