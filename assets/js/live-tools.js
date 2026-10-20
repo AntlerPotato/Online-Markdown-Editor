@@ -31,8 +31,9 @@
 
     // links: what the link bubble's buttons do ({ open(href), edit(link,
     // { anchor, rect, editing }), copy(url), unlink(link, { editing }) },
-    // from app.js; editing: a block was being edited)
-    MDE.createLiveTools = function ({ live, scroller, slashMenu, toolbar, tableBar, tip, linkBubble, langMenu, links }) {
+    // from app.js; editing: a block was being edited). onSlashMenu(open):
+    // the slash menu opened or closed (the quick bar's "/" shows it).
+    MDE.createLiveTools = function ({ live, scroller, slashMenu, toolbar, tableBar, tip, linkBubble, langMenu, links, onSlashMenu }) {
         const isOpen = (panel) => {
             const open = popover.current();
             return !!open && open.panel === panel;
@@ -103,16 +104,15 @@
             const r = live.slashRect();
             panel.style.visibility = r ? '' : 'hidden';
             if (!r) return;
-            const view = window.visualViewport;
-            const viewportHeight = view ? Math.min(window.innerHeight, view.offsetTop + view.height) : window.innerHeight;
-            const below = viewportHeight - r.bottom - 16;
-            const above = r.top - 16;
+            const view = popover.viewport();
+            const below = view.bottom - r.bottom - 16;
+            const above = r.top - view.top - 16;
             list.style.maxHeight = clamp(Math.max(below, above) - foot.offsetHeight - 2, 120, 520) + 'px';
             const height = panel.offsetHeight;
             const top = height <= below || below >= above ? r.bottom + 8 : r.top - height - 8;
             const width = panel.offsetWidth;
             panel.style.left = clamp(r.left - 16, 8, document.documentElement.clientWidth - width - 8) + 'px';
-            panel.style.top = Math.max(8, top) + 'px';
+            panel.style.top = Math.max(view.top + 8, top) + 'px';
         }
 
         function closedSlash() {
@@ -122,6 +122,7 @@
             }
             slashAnchor = null;
             live.dismissSlash();
+            if (onSlashMenu) onSlashMenu(false);
         }
 
         // From live.js: the text typed after "/" in the source editor el, or
@@ -141,6 +142,7 @@
                 el.setAttribute('aria-controls', list.id);
                 list.scrollTop = 0;
                 popover.open(slashMenu, el, { place: placeSlash, onClose: closedSlash });
+                if (onSlashMenu) onSlashMenu(true);
             } else {
                 popover.update();
             }
@@ -187,19 +189,20 @@
             panel.style.visibility = rect ? '' : 'hidden';
             if (!rect) return;
             const box = scroller.getBoundingClientRect();
+            const view = popover.viewport();
             const width = panel.offsetWidth;
             const height = panel.offsetHeight;
             const above = rect.top - height - 8;
             const below = rect.bottom + 8;
             const fitsAbove = above >= box.top;
-            const fitsBelow = below + height <= box.bottom;
+            const fitsBelow = below + height <= Math.min(box.bottom, view.bottom);
             let top = COARSE.matches
                 ? (fitsBelow || !fitsAbove ? below : above)
                 : (fitsAbove || !fitsBelow ? above : below);
             if (!fitsAbove && !fitsBelow) top = box.top + 8;
             const left = rect.left + rect.width / 2 - width / 2;
             panel.style.left = clamp(left, 8, document.documentElement.clientWidth - width - 8) + 'px';
-            panel.style.top = clamp(top, 8, window.innerHeight - height - 8) + 'px';
+            panel.style.top = clamp(top, view.top + 8, view.bottom - height - 8) + 'px';
             panel.dataset.side = top < rect.top ? 'above' : 'below';
         }
 
@@ -208,8 +211,10 @@
         function placeTableBar(panel) {
             hideTip();
             const box = scroller.getBoundingClientRect();
+            const view = popover.viewport();
+            const bottom = Math.min(box.bottom, view.bottom);
             const rect = (table.el.querySelector('.table-wrap') || table.el).getBoundingClientRect();
-            const visible = rect.bottom > box.top && rect.top < box.bottom;
+            const visible = rect.bottom > box.top && rect.top < bottom;
             panel.style.visibility = visible ? '' : 'hidden';
             if (!visible) return;
             const width = panel.offsetWidth;
@@ -217,12 +222,12 @@
             let top = rect.top - height - 8;
             if (top < box.top + 4) {
                 const cell = table.td.getBoundingClientRect();
-                top = rect.bottom + 8 + height <= box.bottom ? rect.bottom + 8
+                top = rect.bottom + 8 + height <= bottom ? rect.bottom + 8
                     : cell.top - height - 8 >= box.top + 4 ? cell.top - height - 8
                     : cell.bottom + 8;
             }
             panel.style.left = clamp(rect.left, 8, document.documentElement.clientWidth - width - 8) + 'px';
-            panel.style.top = clamp(top, 8, window.innerHeight - height - 8) + 'px';
+            panel.style.top = clamp(top, view.top + 8, view.bottom - height - 8) + 'px';
             panel.dataset.side = top < rect.top ? 'above' : 'below';
         }
 

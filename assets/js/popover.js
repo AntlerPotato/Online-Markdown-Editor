@@ -9,22 +9,39 @@
     const menuItems = (panel) => Array.from(panel.querySelectorAll('[role^="menuitem"]')).filter((el) => !el.closest('[hidden]'));
     const isMenu = (panel) => panel.getAttribute('role') === 'menu';
 
+    // The part of the window that can be seen, top to bottom: above the
+    // on-screen keyboard (the visual viewport) and above a bar docked at
+    // the bottom (data-dock, the quick bar on phones)
+    function viewport() {
+        const view = window.visualViewport;
+        let top = 0;
+        let bottom = window.innerHeight;
+        if (view) {
+            top = Math.max(0, view.offsetTop);
+            bottom = Math.min(bottom, view.offsetTop + view.height);
+        }
+        document.querySelectorAll('[data-dock]').forEach((el) => {
+            if (!el.hidden) bottom = Math.min(bottom, el.getBoundingClientRect().top);
+        });
+        return { top, bottom };
+    }
+
     function place(panel, rect) {
         // A box scrolled out of view: keep the panel open but out of sight
         panel.style.visibility = rect ? '' : 'hidden';
         if (!rect) return;
         const viewportWidth = document.documentElement.clientWidth;
-        const viewportHeight = window.innerHeight;
+        const view = viewport();
         const width = panel.offsetWidth;
         const height = panel.offsetHeight;
 
         let left = Math.min(rect.left, viewportWidth - width - 8);
         let top = rect.bottom + 8;
-        if (top + height > viewportHeight - 8 && rect.top - height - 8 >= 8) {
+        if (top + height > view.bottom - 8 && rect.top - height - 8 >= view.top + 8) {
             top = rect.top - height - 8;
         }
         panel.style.left = Math.max(8, left) + 'px';
-        panel.style.top = Math.max(8, top) + 'px';
+        panel.style.top = Math.max(view.top + 8, top) + 'px';
     }
 
     function position({ panel, anchor, options }) {
@@ -120,6 +137,7 @@
         update: () => {
             if (current) position(current);
         },
-        current: () => current
+        current: () => current,
+        viewport
     };
 })(window.MDE = window.MDE || {});

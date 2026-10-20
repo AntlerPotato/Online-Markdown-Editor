@@ -20,6 +20,15 @@
     const moreMenu = $('moreMenu');
     const inlineToolbar = $('inlineToolbar');
     const saveStatus = $('saveStatus');
+    const docTitle = $('docTitle');
+    const viewToggle = $('viewToggle');
+    const phoneMenu = $('phoneMenu');
+    const quickBar = $('quickBar');
+    const quickSlashButton = quickBar.querySelector('[data-command="slash"]');
+
+    // Phones (as in layout.css) and touch screens
+    const PHONE = window.matchMedia('(max-width: 640px)');
+    const COARSE = window.matchMedia('(pointer: coarse)');
 
     const DEFAULT_NAME = 'document.md';
     const FONT_MIN = 10;
@@ -49,6 +58,7 @@
     let syncSource = null;
     let syncTimer = 0;
     let tocFrame = 0;
+    let slashShown = false;     // the slash menu is open (the quick bar's "/" shows it)
 
     const editor = MDE.createEditor({
         textarea,
@@ -96,6 +106,10 @@
                 // Focus on the view (so Ctrl+Z works), no block opened
                 if (!editing) live.stopEditing(true);
             }
+        },
+        onSlashMenu: (open) => {
+            slashShown = open;
+            updateQuickBar();
         }
     });
     // The handle beside each block and its menu
@@ -140,6 +154,7 @@
 
         $('statusWords').textContent = `${words} 字 · ${lines} 行`;
         $('statusReading').textContent = `约 ${minutes} 分钟读完`;
+        $('phoneStats').textContent = `${words} 字 · ${lines} 行 · 约 ${minutes} 分钟读完`;
     }
 
     function scheduleStats() {
@@ -158,6 +173,7 @@
         chip.textContent = info.label;
         chip.hidden = !info.label;
         handleCaret(info);
+        updateQuickBar();
     }
 
     // The editing surface of the current view
@@ -322,6 +338,9 @@
 
     function showToast(message, ok = true) {
         const toast = $('toast');
+        // Above the quick bar and the on-screen keyboard when they show
+        const below = window.innerHeight - popover.viewport().bottom;
+        toast.style.bottom = (below > 0 ? below + 12 : 64) + 'px';
         $('toastText').textContent = message;
         toast.classList.toggle('is-error', !ok);
         toast.classList.add('is-shown');
@@ -425,6 +444,10 @@
             const role = el.getAttribute('role') || '';
             el.setAttribute(role === 'menuitemradio' ? 'aria-checked' : 'aria-pressed', String(el.dataset.mode === mode));
         });
+        viewToggle.setAttribute('aria-label', mode === 'live' ? '切换到源码模式' : '切换到实时模式');
+        updateQuickBar();
+        // On phones the toolbar shows in some views only
+        fitToolbar();
 
         // Live mode edits through the (hidden) source editor
         if (mode === 'live') {
@@ -482,7 +505,7 @@
     function setFontSize(size) {
         state.fontSize = clamp(size, FONT_MIN, FONT_MAX);
         document.documentElement.style.setProperty('--font-size', state.fontSize + 'px');
-        $('fontSizeDisplay').textContent = `${state.fontSize} px`;
+        document.querySelectorAll('.font-size-value').forEach((el) => { el.textContent = `${state.fontSize} px`; });
         document.querySelectorAll('[data-command="font-dec"]').forEach((el) => {
             el.setAttribute('aria-disabled', String(state.fontSize <= FONT_MIN));
         });
@@ -542,6 +565,8 @@
     // ========================================================================
 
     const SAVE_LABELS = { saved: '已自动保存', pending: '正在保存…', error: '无法自动保存' };
+    // Under the file name on phones
+    const PHONE_SAVE_LABELS = { saved: '已保存在本机浏览器', pending: '正在保存…', error: '无法保存在本机浏览器' };
 
     // The save indicator is icon-only until hovered, so its name carries the details
     function updateSaveButton() {
@@ -553,13 +578,16 @@
         const label = $('fileName');
         label.textContent = state.fileName;
         label.title = state.fileName;
+        $('docName').textContent = state.fileName;
         updateSaveButton();
     }
 
     function setSaveState(status) {
         if (saveStatus.dataset.state === status) return;
         saveStatus.dataset.state = status;
+        docTitle.dataset.state = status;
         $('saveLabel').textContent = SAVE_LABELS[status];
+        $('docSaveLabel').textContent = PHONE_SAVE_LABELS[status];
         $('saveAlert').textContent = status === 'error' ? SAVE_LABELS.error : '';
         updateSaveButton();
     }
@@ -671,7 +699,7 @@
         const atSelection = !fromToolbar && state.view === 'live' && !!live.selectionRect();
         // From the bubble of a link nobody was editing: no block opens
         linkDone = edit && !edit.editing ? () => live.stopEditing(true) : focusEditor;
-        const anchor = edit || (el instanceof Element && inlineToolbar.contains(el)) ? el : button;
+        const anchor = edit || (el instanceof Element && (inlineToolbar.contains(el) || quickBar.contains(el))) ? el : button;
         popover.open(linkDialog, anchor, {
             rect: edit ? edit.rect : atSelection ? () => live.selectionRect() : null,
             returnFocus: fromToolbar ? null : linkDone,
@@ -836,6 +864,9 @@
         toc: () => commands.insertToc(),
         hr: () => commands.insertRule(),
         view: (el) => setView(el.dataset.mode),
+        'view-toggle': () => setView(state.view === 'live' ? 'edit' : 'live'),
+        slash: quickSlash,
+        'hide-keyboard': () => live.stopEditing(true),
         'toggle-sync': () => setSync(!state.sync),
         'toggle-focus': () => setFocusMode(!state.focusMode),
         'toggle-typewriter': () => setTypewriter(!state.typewriter),
@@ -864,7 +895,8 @@
         if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return;
 
         const open = popover.current();
-        const fromMenu = open && el.closest('[role="menu"]');
+        // Switches and steps (data-keep-open) leave their menu open
+        const fromMenu = open && el.closest('[role="menu"]') && !el.hasAttribute('data-keep-open');
         if (fromMenu) popover.close(false);
         run(el.dataset.command, el);
 
@@ -934,12 +966,13 @@
         buttons[next].focus();
     });
 
-    // Menu buttons: the logo (file menu), paragraph style and more tools
+    // Menu buttons: the logo (file menu), paragraph style, more tools, and
+    // "more" on phones
     document.querySelectorAll('[data-menu]').forEach((button) => {
         const panel = $(button.dataset.menu);
         const options = {
             focusChecked: true,
-            onOpen: button === headingButton ? updateFormatState : null
+            onOpen: button === headingButton ? updateFormatState : panel === phoneMenu ? fillPhoneMenu : null
         };
 
         button.addEventListener('click', () => popover.toggle(panel, button, options));
@@ -996,6 +1029,78 @@
     // The header itself isn't observed: stacking changes its height
     window.addEventListener('resize', fitToolbar);
     if ('ResizeObserver' in window) new ResizeObserver(fitToolbar).observe($('headerActions'));
+
+    // ========================================================================
+    // Phones: "more", the quick bar and the on-screen keyboard
+    // ========================================================================
+
+    // The settings that apply to the current view
+    function fillPhoneMenu() {
+        phoneMenu.querySelectorAll('[data-views]').forEach((el) => {
+            el.hidden = !el.dataset.views.split(' ').includes(state.view);
+        });
+        popover.update();
+    }
+
+    // The quick bar shows while a block of live mode is edited on a
+    // phone's touch screen; its "/" is pressed while the slash menu is open
+    function updateQuickBar() {
+        const show = state.view === 'live' && PHONE.matches && COARSE.matches && !!live.activeElement();
+        if (quickBar.hidden === show) {
+            quickBar.hidden = !show;
+            popover.update();
+        }
+        const pressed = String(show && slashShown);
+        if (quickSlashButton.getAttribute('aria-pressed') !== pressed) quickSlashButton.setAttribute('aria-pressed', pressed);
+    }
+
+    // A press on "/" while the slash menu is open closes the menu (as any
+    // press outside it does, in popover.js); its click must not open the
+    // menu again. Window capture runs before popover.js closes it.
+    let slashWasOpen = false;
+    window.addEventListener('pointerdown', (e) => {
+        slashWasOpen = slashShown && quickSlashButton.contains(e.target);
+    }, true);
+
+    // "/": the slash menu on an empty line, a new one under the block
+    // being edited unless it is empty
+    function quickSlash() {
+        if (slashWasOpen) return;
+        const el = live.activeElement();
+        const info = el && live.blockInfo(el);
+        if (!info) return;
+        if (!info.gap && info.source) live.insertBelow(el);
+        live.startSlash();
+    }
+
+    // Keep the text focused (and the keyboard up) while using the bar
+    quickBar.addEventListener('mousedown', (e) => e.preventDefault());
+
+    // The window keeps its height when the on-screen keyboard comes up
+    // (Safari, and Chrome by default), so on phones the app is fitted to
+    // the part above the keyboard, and the quick bar sits on it. Not while
+    // zoomed in: then the visible part is smaller for another reason.
+    function fitViewport() {
+        const view = window.visualViewport;
+        const covered = PHONE.matches && !!view && Math.abs(view.scale - 1) < 0.01 && view.height < window.innerHeight - 1;
+        app.style.height = covered ? view.height + 'px' : '';
+        app.style.top = covered ? view.offsetTop + 'px' : '';
+        popover.update();
+    }
+
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', fitViewport);
+        window.visualViewport.addEventListener('scroll', fitViewport);
+    }
+
+    [PHONE, COARSE].forEach((query) => {
+        if (query.addEventListener) {
+            query.addEventListener('change', () => {
+                fitViewport();
+                updateQuickBar();
+            });
+        }
+    });
 
     if (IS_MAC) {
         document.querySelectorAll('.menu-kbd').forEach((el) => { el.textContent = el.textContent.replace('Ctrl+', '⌘'); });
