@@ -15,7 +15,7 @@
     const REBUILD_DELAY = 120;         // ms of quiet typing before the block structure is checked again
     const CODE_HIGHLIGHT_DELAY = 150;  // ms of quiet typing before a code block is highlighted again
     const MATH_PREVIEW_DELAY = 60;
-    const PLACEHOLDER = '直接开始写作';
+    const PLACEHOLDER = '输入 / 插入块，或直接开始写作';
 
     const HEADING_LABELS = ['一级标题', '二级标题', '三级标题', '四级标题', '五级标题', '六级标题'];
     const USES_DEFS = new Set(['paragraph', 'heading', 'quote', 'list', 'table', 'image', 'toc']);
@@ -31,6 +31,11 @@
     const LIST_ITEM = /^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)(\[[ xX]\][ \t]+)?/;
     const TASK_MARK = /^[ \t>]*(?:[-*+]|\d{1,9}[.)])[ \t]+\[([ xX])\]/gm;
     const INLINE_MATH = /(\$\$?)([^$\n]+?)\1/g;
+    // "/" typed on an empty line opens the slash menu, and what follows it
+    // filters the menu. "、" is what the same key types with a Chinese
+    // input method.
+    const SLASH = /^[/、]([^\n]*)$/;
+    const SLASH_KEYS = new Set(['/', '、']);
     const LEADING_TABS = /^( *)(\t+)/gm;
 
     // Firefox before 136 has no plaintext-only; pasting and Enter are
@@ -42,6 +47,24 @@
     })();
 
     const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+    // What the slash menu puts in place of the "/…" line: the Markdown, the
+    // selection in it (the caret goes to its end by default), and whether
+    // the caret moves on to an empty line after it
+    const TABLE_CELLS = ' 单元格 |'.repeat(3);
+    const SLASH_BLOCKS = {
+        p: { text: '' },
+        h1: { text: '# ' },
+        h2: { text: '## ' },
+        task: { text: '- [ ] ' },
+        ul: { text: '- ' },
+        quote: { text: '> ' },
+        table: { text: `| 标题1 | 标题2 | 标题3 |\n|---|---|---|\n|${TABLE_CELLS}\n|${TABLE_CELLS}`, select: [2, 5] },
+        code: { text: '```\n\n```', select: [4, 4] },
+        math: { text: '$$\n\n$$', select: [3, 3] },
+        html: { text: '```html\n\n```', select: [8, 8] },
+        toc: { text: '[TOC]', after: true }
+    };
 
     // cyrb53: a fast 53-bit string hash, the key of the rendered-block cache
     function hash(str) {
@@ -367,7 +390,11 @@
     // The live view
     // ========================================================================
 
-    MDE.createLive = function ({ root, scroller, editor, onCaret, onRender }) {
+    // onSlash(query, el) opens or filters the slash menu for the source
+    // editor el (query null: close it) and returns false when nothing
+    // matches; onSelection tells the selection toolbar to look again;
+    // onKey(key) lets them take a key press first (true: taken).
+    MDE.createLive = function ({ root, scroller, editor, onCaret, onRender, onSlash, onSelection, onKey }) {
         const cache = new Map();
         const byElement = new WeakMap();
         let blocks = [];
@@ -386,6 +413,7 @@
         let keyboardCaret = false; // the caret last moved by keyboard (typewriter scrolling)
         let rebuildTimer = 0;
         let selectionFrame = 0;
+        let slash = null;          // the slash menu is open for this block element: { el }
         const settings = { typewriter: false, focusMode: false };
 
         const bubble = document.createElement('div');
@@ -670,6 +698,8 @@
             if (value !== text && !(edit && !structural && active && !active.gap && fastPath(edit, value))) rebuild();
             structural = false;
             if (editing) placeCaret();
+            // Undo, a command: the "/" line may be gone
+            updateSlash(false);
         }
 
         // --- Editors --------------------------------------------------------
@@ -896,13 +926,15 @@
 
         function leave(b) {
             hideBubble();
+            closeSlash();
             if (b.gap) {
                 b.el.remove();
-                return;
+            } else {
+                if (b.ui && b.ui.timer) clearTimeout(b.ui.timer);
+                renderBlock(b);
+                refreshHeadings();
             }
-            if (b.ui && b.ui.timer) clearTimeout(b.ui.timer);
-            renderBlock(b);
-            refreshHeadings();
+            notifySelection();
         }
 
         // Edit `target` instead of the current block. With `anchor`, the
@@ -980,6 +1012,7 @@
             revealCaret();
             notifyCaret();
             updateBubble();
+            notifySelection();
         }
 
         // Activate whatever holds the document's caret
@@ -1176,15 +1209,16 @@
                 const at = b.pos + pad.lead.length;
                 structural = true;
                 editor.replaceRange(b.pos, b.pos, pad.lead + value + pad.trail, at + sel.start, at + sel.end, 'break');
-                return;
+            } else {
+                let p = 0;
+                const max = Math.min(old.length, value.length);
+                while (p < max && old[p] === value[p]) p++;
+                let s = 0;
+                while (s < max - p && old[old.length - 1 - s] === value[value.length - 1 - s]) s++;
+                selfEdit = { from: b.start + p, to: b.start + old.length - s, length: value.length - p - s };
+                editor.replaceRange(selfEdit.from, selfEdit.to, value.slice(p, value.length - s), b.start + sel.start, b.start + sel.end, kind);
             }
-            let p = 0;
-            const max = Math.min(old.length, value.length);
-            while (p < max && old[p] === value[p]) p++;
-            let s = 0;
-            while (s < max - p && old[old.length - 1 - s] === value[value.length - 1 - s]) s++;
-            selfEdit = { from: b.start + p, to: b.start + old.length - s, length: value.length - p - s };
-            editor.replaceRange(selfEdit.from, selfEdit.to, value.slice(p, value.length - s), b.start + sel.start, b.start + sel.end, kind);
+            updateSlash(!old && SLASH_KEYS.has(value));
         }
 
         function insertText(str, kind) {
@@ -1394,6 +1428,93 @@
             bubble.style.top = (rects[rects.length - 1].bottom - box.top + scroller.scrollTop + 6) + 'px';
         }
 
+        // --- Slash menu and selection toolbar ------------------------------------
+
+        function notifySelection() {
+            if (onSelection) onSelection();
+        }
+
+        function closeSlash() {
+            if (!slash) return;
+            slash = null;
+            if (onSlash) onSlash(null);
+        }
+
+        // After typing or a caret move: open the slash menu when "/" was just
+        // typed on an empty line, filter it while the line is "/…", and close
+        // it once the line or the caret leaves that shape
+        function updateSlash(typed) {
+            const b = active;
+            const m = b && !b.gap && b.mode === 'source' ? SLASH.exec(sourceOf(b)) : null;
+            if (typed && m && onSlash) slash = { el: b.el };
+            if (!slash) return;
+            const sel = m && slash.el === b.el ? readSelection(b.ui.src) : null;
+            if (!sel || sel.start === 0 || /^\s/.test(m[1]) || onSlash(m[1], b.ui.src) === false) closeSlash();
+        }
+
+        // Replace the "/…" line with a block chosen in the slash menu
+        function applySlash(id) {
+            const spec = SLASH_BLOCKS[id];
+            const b = active;
+            const ready = spec && slash && b && !b.gap && b.mode === 'source';
+            closeSlash();
+            if (!ready) return;
+            const [from, to] = spec.select || [spec.text.length, spec.text.length];
+            editing = true;
+            structural = true;
+            editor.replaceRange(b.start, b.end, spec.text, b.start + from, b.start + to);
+            if (spec.after && active && !active.gap) goToGap(active.end, indexOf(active) + 1);
+        }
+
+        // A box on screen, or null while it is scrolled out of the document's view
+        function onScreen(rect) {
+            const box = scroller.getBoundingClientRect();
+            return rect && rect.bottom > box.top && rect.top < box.bottom ? rect : null;
+        }
+
+        function rangeIn(src, start, end) {
+            const a = pointAt(src, start);
+            const z = pointAt(src, end);
+            const range = document.createRange();
+            range.setStart(a.node, a.offset);
+            range.setEnd(z.node, z.offset);
+            return range;
+        }
+
+        // Where the "/" of the slash menu is
+        function slashRect() {
+            const b = active;
+            if (!slash || !b || b.gap || b.mode !== 'source') return null;
+            return onScreen(rangeIn(b.ui.src, 0, 1).getBoundingClientRect());
+        }
+
+        // The document's selection (or caret) inside the block being edited.
+        // This holds while focus is elsewhere, e.g. in the link dialog.
+        function selectionRect() {
+            const b = active;
+            if (!b || b.gap || b.mode !== 'source') return null;
+            const src = b.ui.src;
+            const sel = editor.getSelection();
+            const length = src.textContent.length;
+            const start = clamp(sel.start - b.start, 0, length);
+            const end = clamp(sel.end - b.start, 0, length);
+            if (start === end) {
+                const r = caretRect(src, start);
+                return onScreen({ top: r.top, bottom: r.bottom, left: r.left, right: r.left, width: 0, height: r.bottom - r.top });
+            }
+            return onScreen(rangeIn(src, start, end).getBoundingClientRect());
+        }
+
+        // What the selection toolbar needs to know, or null when there is no
+        // selection in a source editor that has focus
+        function selectionState() {
+            const b = active;
+            if (!visible || !b || b.gap || b.mode !== 'source' || composing || document.activeElement !== b.ui.src) return null;
+            const s = readSelection(b.ui.src);
+            if (!s) return null;
+            return { el: b.ui.src, kind: b.kind, start: b.start + s.start, end: b.start + s.end, collapsed: s.start === s.end };
+        }
+
         // --- Events -------------------------------------------------------------
 
         const inSource = (b, target) => b && b.mode === 'source' && b.ui.src.contains(target);
@@ -1402,6 +1523,7 @@
         root.addEventListener('compositionstart', () => {
             composing = true;
             hideBubble();
+            notifySelection();
         });
 
         root.addEventListener('compositionend', (e) => {
@@ -1425,7 +1547,7 @@
             // Usually handled on keydown; this catches virtual keyboards
             if (e.inputType === 'insertParagraph' || e.inputType === 'insertLineBreak') {
                 e.preventDefault();
-                handleEnter(e.inputType === 'insertLineBreak');
+                if (!(onKey && onKey('Enter'))) handleEnter(e.inputType === 'insertLineBreak');
             } else if (e.inputType === 'deleteContentBackward' || e.inputType === 'deleteContentForward') {
                 handleDeleteKey(e, e.inputType === 'deleteContentBackward');
             }
@@ -1476,6 +1598,12 @@
             const field = inInput(b, e.target) || (b.mode === 'code' && e.target === b.ui.lang);
             if (!source && !field) return;
             if (e.isComposing || composing || e.keyCode === 229) return;
+            const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
+            // The slash menu and the selection toolbar get their keys first
+            if (source && plain && onKey && onKey(e.key)) {
+                e.preventDefault();
+                return;
+            }
             if (e.key === 'Escape') {
                 e.preventDefault();
                 stopEditing(true);
@@ -1488,7 +1616,6 @@
                 }
                 return;
             }
-            const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
             switch (e.key) {
                 case 'Enter':
                     if (source && plain) {
@@ -1550,10 +1677,14 @@
             if (!visible || !active || selectionFrame) return;
             selectionFrame = requestAnimationFrame(() => {
                 selectionFrame = 0;
-                if (!active || composing || !captureSelection()) return;
-                notifyCaret();
-                updateBubble();
-                if (keyboardCaret && settings.typewriter) revealCaret();
+                if (!active || composing) return;
+                if (captureSelection()) {
+                    notifyCaret();
+                    updateBubble();
+                    updateSlash(false);
+                    if (keyboardCaret && settings.typewriter) revealCaret();
+                }
+                notifySelection();
             });
         }
 
@@ -1608,7 +1739,22 @@
                     const at = b.pos + pad.lead.length;
                     if (pad.lead || pad.trail) editor.replaceRange(b.pos, b.pos, pad.lead + pad.trail, at, at, null);
                 }
+                // A command that turns the block into code or a formula
+                // opens that block's editor
+                structural = true;
+                queueMicrotask(() => { structural = false; });
             },
+
+            // Slash menu: insert the chosen block, or forget the "/" once
+            // the menu was closed some other way (it stays as text)
+            applySlash,
+            dismissSlash() {
+                slash = null;
+            },
+
+            slashRect,
+            selectionRect,
+            selectionState,
 
             // highlight.js or KaTeX arrived: render what was waiting for them
             refreshLibraries() {
