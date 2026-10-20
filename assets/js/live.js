@@ -2307,6 +2307,17 @@
 
         window.addEventListener('resize', hideBubble);
 
+        // The view got shorter (on a phone: the on-screen keyboard came up,
+        // or the quick bar): keep the caret in sight
+        if ('ResizeObserver' in window) {
+            let viewHeight = 0;
+            new ResizeObserver(() => {
+                const height = scroller.clientHeight;
+                if (height < viewHeight && visible && editing && active) revealCaret();
+                viewHeight = height;
+            }).observe(scroller);
+        }
+
         // --- Public API ---------------------------------------------------------
 
         return {

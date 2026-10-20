@@ -391,6 +391,133 @@
     color: var(--danger);
 }
 
+/* --- Phones: file name, view toggle, more ---------------------------------- */
+/* Shown instead of the save indicator, the view modes, the theme switch and
+   the export button (see "Phones" below) */
+
+.doc-title {
+    min-width: 0;
+    flex: 1;
+    display: none;
+    flex-direction: column;
+    line-height: 1.25;
+}
+
+.doc-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-strong);
+}
+
+.doc-save {
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.doc-title[data-state="saved"] .save-icon-saved,
+.doc-title[data-state="pending"] .save-icon-pending,
+.doc-title[data-state="error"] .save-icon-error {
+    display: block;
+}
+
+.doc-title[data-state="error"] .doc-save {
+    color: var(--danger-text);
+}
+
+.doc-title[data-state="error"] .save-icon-error {
+    color: var(--danger);
+}
+
+/* 44px buttons of the phone's top bar and quick bar */
+.phone-btn {
+    width: 44px;
+    height: 44px;
+    flex: none;
+    padding: 0;
+    display: inline-grid;
+    place-items: center;
+    border: 0;
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--text-control);
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+@media (hover: hover) {
+    .phone-btn:hover:not([aria-disabled="true"]) {
+        background: var(--hover-strong);
+    }
+}
+
+.phone-btn:active:not([aria-disabled="true"]),
+.phone-btn[aria-pressed="true"],
+.phone-btn[aria-expanded="true"] {
+    background: var(--pressed);
+    color: var(--text);
+}
+
+.phone-btn[aria-disabled="true"] {
+    opacity: 0.38;
+    cursor: default;
+}
+
+.header-actions .phone-btn {
+    display: none;
+}
+
+/* Live mode: switch to source; the other views: back to live */
+.app[data-view="live"] .view-icon-live,
+.app:not([data-view="live"]) .view-icon-source {
+    display: none;
+}
+
+/* --- Quick bar --------------------------------------------------------------- */
+/* At the bottom of the window (over the on-screen keyboard) while a block
+   of live mode is edited on a phone; app.js shows it */
+
+.quick-bar {
+    position: relative;
+    z-index: 5;
+    flex: none;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 6px;
+    border-top: 1px solid var(--border);
+    background: var(--surface-sunken);
+}
+
+/* Narrow phones: the buttons share the room */
+.quick-bar .phone-btn {
+    flex: 0 1 44px;
+    min-width: 0;
+}
+
+.quick-slash {
+    font-family: var(--font-mono);
+    font-size: 18px;
+    font-weight: 500;
+}
+
+/* "Hide the keyboard" sits at the right end */
+.quick-sep {
+    width: 1px;
+    height: 24px;
+    flex: none;
+    margin: 0 2px 0 auto;
+    background: var(--border);
+}
+
 /* --- Document card ------------------------------------------------------- */
 
 .card {
@@ -599,11 +726,13 @@
     transition: transform 0.15s ease;
 }
 
-[aria-pressed="true"] > .switch {
+[aria-pressed="true"] > .switch,
+[aria-checked="true"] > .switch {
     background: var(--accent);
 }
 
-[aria-pressed="true"] > .switch::after {
+[aria-pressed="true"] > .switch::after,
+[aria-checked="true"] > .switch::after {
     transform: translateX(12px);
 }
 
@@ -722,6 +851,129 @@
         overflow: hidden;
         clip: rect(0, 0, 0, 0);
         white-space: nowrap;
+    }
+}
+
+/* --- Phones ------------------------------------------------------------------ */
+/* The app fills the window (app.js fits it to the part above the on-screen
+   keyboard): a 60px top bar on the sky with the file menu, the file name,
+   live ⇄ source and "more"; the document; the quick bar while editing.
+   The formatting toolbar gets a row of its own in the source and split
+   views (and in live mode without a touch screen); the status bar's
+   settings and counts are in the "more" menu. */
+
+@media (max-width: 640px) {
+    html,
+    body {
+        overflow: hidden;
+    }
+
+    .app {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 100vh;
+        height: 100dvh;
+        min-height: 0;
+    }
+
+    .stage {
+        flex: 1;
+        margin: 0;
+        padding: 0;
+        gap: 0;
+        border-radius: 0;
+        background: var(--surface);
+    }
+
+    .sky {
+        display: none;
+    }
+
+    .app-header,
+    .app-header.is-stacked {
+        min-height: 60px;
+        flex-wrap: wrap;
+        gap: 4px 8px;
+        padding: 7px 8px 8px 12px;
+        background: var(--sky);
+        border: 0;
+        border-bottom: 1px solid var(--border);
+        border-radius: 0;
+        box-shadow: none;
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+    }
+
+    .brand-btn {
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        justify-content: center;
+    }
+
+    .brand-btn .chevron,
+    .header-sep,
+    .save-status,
+    .header-actions .segmented,
+    .theme-toggle,
+    .btn-export {
+        display: none;
+    }
+
+    .doc-title {
+        display: flex;
+    }
+
+    .header-actions,
+    .is-stacked .header-actions {
+        gap: 8px;
+        padding-left: 0;
+    }
+
+    .header-actions .phone-btn {
+        display: inline-grid;
+    }
+
+    .toolbar,
+    .is-stacked .toolbar {
+        order: 1;
+        flex: 1 1 100%;
+    }
+
+    .app[data-view="preview"] .toolbar {
+        display: none;
+    }
+
+    .card {
+        flex: 1;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+    }
+
+    .panes {
+        min-height: 0;
+    }
+
+    .pane,
+    .app[data-view] .pane-preview {
+        flex: 1 1 0;
+        height: auto;
+        min-height: 0;
+    }
+
+    .statusbar {
+        display: none;
+    }
+}
+
+/* Live mode on a touch screen: the slash menu, the toolbar over selected
+   text and the quick bar take the toolbar's place */
+@media (max-width: 640px) and (pointer: coarse) {
+    .app[data-view="live"] .toolbar {
+        display: none;
     }
 }
 

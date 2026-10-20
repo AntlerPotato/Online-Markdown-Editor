@@ -178,6 +178,99 @@
     color: var(--text-soft);
 }
 
+/* --- More menu (phones) ---------------------------------------------------- */
+/* The views, the switches and font size of the status bar, and the counts */
+
+.phone-menu {
+    width: 252px;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.menu-heading {
+    padding: 6px 10px 2px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+}
+
+.phone-menu [role="menuitemradio"][aria-checked="true"] {
+    color: var(--link);
+    font-weight: 500;
+}
+
+.menu-item > .switch {
+    margin-left: auto;
+}
+
+.menu-row {
+    height: 38px;
+    flex: none;
+    padding: 0 2px 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: var(--text-control);
+}
+
+.menu-row > svg {
+    color: var(--muted);
+}
+
+.menu-step {
+    width: 34px;
+    height: 34px;
+    flex: none;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-control);
+}
+
+.menu-row > .menu-step:first-of-type {
+    margin-left: auto;
+}
+
+.menu-step:hover:not([aria-disabled="true"]),
+.menu-step:active:not([aria-disabled="true"]),
+.menu-step:focus-visible {
+    background: var(--hover);
+    outline: none;
+}
+
+.menu-step[aria-disabled="true"] {
+    opacity: 0.38;
+    cursor: default;
+}
+
+.menu-row > .font-size-value {
+    min-width: 40px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.menu-note {
+    padding: 6px 10px 4px;
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+@media (pointer: coarse) {
+    .phone-menu .menu-item,
+    .phone-menu .menu-row {
+        height: 44px;
+    }
+
+    .menu-step {
+        width: 40px;
+        height: 40px;
+    }
+}
+
 /* --- Dialog-style popovers ---------------------------------------------- */
 
 .popover-dialog {
