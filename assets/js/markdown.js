@@ -277,6 +277,11 @@
 
         const { text, blocks, shifts } = extractMath(source);
         const tokens = marked.lexer(text);
+        // Addresses starting "www." that GFM links by themselves open over
+        // https (GFM says http)
+        marked.walkTokens(tokens, (token) => {
+            if (token.type === 'link' && /^www\./i.test(token.raw)) token.href = 'https://' + token.raw;
+        });
         const headingLines = headingSourceLines(tokens, shifts);
         let html = marked.parser(tokens);
         const ownHeadings = headings;
