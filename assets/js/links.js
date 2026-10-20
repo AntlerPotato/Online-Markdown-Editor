@@ -136,8 +136,9 @@
                         url = (BACKPEDAL.exec(url) || [''])[0];
                     } while (url !== prev);
                     if (url) {
+                        // markdown.js links "www." over https
                         const www = /^www\./i.test(url);
-                        out.push({ kind: 'bare', from: i, to: i + url.length, text: '', url, href: href(www ? 'http://' + url : url) });
+                        out.push({ kind: 'bare', from: i, to: i + url.length, text: '', url, href: href(www ? 'https://' + url : url) });
                         i += url.length;
                         continue;
                     }
