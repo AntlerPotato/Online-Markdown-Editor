@@ -140,6 +140,16 @@
                             <!-- Block handle: beside the block under the pointer and the block being edited ("+" beside an empty line) -->
                             <button type="button" class="lv-grip" id="blockHandle" tabindex="-1" data-kind="grip" aria-label="块菜单" aria-haspopup="menu" aria-expanded="false" aria-controls="blockMenuMain" hidden><svg class="lv-grip-dots" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg><svg class="lv-grip-add" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
                             <div class="lv-drop" id="dropLine" aria-hidden="true" hidden></div>
+                            <!-- Link bubble: under a link the mouse rests on, or the link the caret is in -->
+                            <div class="link-bubble" id="linkBubble" role="toolbar" aria-label="链接" hidden>
+                                <svg class="link-bubble-globe" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                                <span class="link-bubble-url"></span>
+                                <span class="tb-sep" aria-hidden="true"></span>
+                                <button type="button" class="tb" tabindex="-1" data-link="open" aria-label="在新标签页打开" data-keys="Ctrl 单击"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></button>
+                                <button type="button" class="tb" tabindex="-1" data-link="edit" aria-label="编辑链接" aria-haspopup="dialog" aria-expanded="false" data-keys="Ctrl K"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+                                <button type="button" class="tb" tabindex="-1" data-link="copy" aria-label="复制链接"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="13" height="13" x="9" y="9" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+                                <button type="button" class="tb" tabindex="-1" data-link="unlink" aria-label="取消链接"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m18.84 12.25 1.72-1.71a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5 5 0 0 0 7.07 7.07l1.71-1.71"/><path d="M8 2v3"/><path d="M2 8h3"/><path d="M16 22v-3"/><path d="M22 16h-3"/></svg></button>
+                            </div>
                         </div>
                     </div>
 
@@ -245,10 +255,10 @@
             <label class="field-label" for="linkUrl" id="linkUrlLabel">链接地址</label>
             <input class="input input-mono" id="linkUrl" type="url" value="https://" autocomplete="off" spellcheck="false">
         </div>
-        <label class="check"><input type="checkbox" id="linkAsImage">作为图片插入</label>
+        <label class="check" id="linkImageOption"><input type="checkbox" id="linkAsImage">作为图片插入</label>
         <div class="dialog-actions">
             <button type="button" class="btn-ghost" data-dismiss>取消</button>
-            <button type="submit" class="btn-ink">插入</button>
+            <button type="submit" class="btn-ink" id="linkSubmit">插入</button>
         </div>
     </form>
 
@@ -322,6 +332,12 @@
     </div>
     <div class="float-tip" id="floatTip" aria-hidden="true" hidden></div>
 
+    <!-- Code language menu (live mode): opened from the language of the code block being edited; typing filters it -->
+    <div class="popover lang-menu" id="langMenu" hidden>
+        <label class="lang-search"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span class="sr-only">搜索语言</span><input type="text" id="langSearch" role="combobox" aria-expanded="true" aria-controls="langList" aria-autocomplete="list" placeholder="搜索语言" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+        <div class="lang-list" id="langList" role="listbox" aria-label="代码语言"></div>
+    </div>
+
     <!-- Short confirmations (e.g. after copying a block) -->
     <div class="toast" id="toast" role="status"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg><span id="toastText"></span></div>
 
@@ -335,6 +351,7 @@
     <script src="assets/js/syntax.js"></script>
     <script src="assets/js/editor.js"></script>
     <script src="assets/js/table.js"></script>
+    <script src="assets/js/links.js"></script>
     <script src="assets/js/live.js"></script>
     <script src="assets/js/commands.js"></script>
     <script src="assets/js/popover.js"></script>

@@ -408,6 +408,7 @@
         let blocks = [];
         let text = null;           // the document the blocks were built from
         let defs = '';
+        let refs = Object.create(null); // reference definitions: label → { href, title }
         let tocHeadings = [];
         let tocKey = '';
         let active = null;         // the block, or empty line ("gap"), being edited
@@ -431,6 +432,11 @@
         scroller.appendChild(bubble);
 
         const sourceOf = (b) => (b.gap ? '' : text.slice(b.start, b.end));
+        // The address of a reference label ([text][label]), if it is defined
+        const resolveRef = (label) => {
+            const link = refs[label.replace(/\s+/g, ' ').toLowerCase()];
+            return link ? link.href : undefined;
+        };
         const baseOf = (b) => (b.gap ? b.pos : b.start);
         const editorFor = (b) => (b.kind === 'fence' ? 'code' : b.kind === 'math' ? 'math' : b.kind === 'table' ? 'table' : 'source');
         // The text editor of the block (a source block, or a table's open
@@ -580,6 +586,7 @@
             const nextDefs = definitions(links);
             const defsChanged = nextDefs !== defs;
             defs = nextDefs;
+            refs = links;
             const next = list.map((item) => describe(value, item));
 
             const old = blocks.slice();
@@ -766,7 +773,8 @@
             b.el.style.containIntrinsicSize = '';
             b.el.innerHTML = '<div class="code-block lv-code">'
                 + '<div class="code-block-head">'
-                + '<input class="lv-lang" type="text" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="代码语言" placeholder="语言">'
+                + '<button type="button" class="lv-lang" aria-haspopup="listbox" aria-expanded="false" aria-controls="langList"><span class="lv-lang-name"></span>'
+                + '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>'
                 + `<button type="button" class="code-copy" aria-label="复制代码">${markdown.ICON_COPY}<span>复制</span></button>`
                 + '</div>'
                 + '<div class="code-block-body"><div class="line-numbers" aria-hidden="true"></div>'
@@ -784,7 +792,7 @@
                 count: 0,
                 timer: 0
             };
-            ui.lang.value = ui.parts.info.trim();
+            showLanguage(ui);
             ui.input.value = ui.parts.content;
             ui.lineHeight = parseFloat(getComputedStyle(ui.input).lineHeight) || 24;
             b.mode = 'code';
@@ -849,13 +857,43 @@
                 if (b.mode === 'code') paintCode(b.ui);
                 else paintMath(b.ui);
             }
-            if (b.mode === 'code' && document.activeElement !== b.ui.lang) b.ui.lang.value = parts.info.trim();
+            if (b.mode === 'code') showLanguage(b.ui);
             if (b.mode === 'math') sizeMath(b.ui);
         }
 
         // --- Code editor ----------------------------------------------------
 
-        const codeLanguage = (ui) => (ui.parts.info.trim().split(/\s+/)[0] || '').toLowerCase();
+        const infoWord = (ui) => ui.parts.info.trim().split(/\s+/)[0] || '';
+        const codeLanguage = (ui) => infoWord(ui).toLowerCase();
+
+        // The language chip at the top left (live-tools.js opens its menu)
+        function showLanguage(ui) {
+            const lang = infoWord(ui);
+            if (ui.lang.dataset.lang === lang) return;
+            ui.lang.dataset.lang = lang;
+            ui.lang.firstChild.textContent = lang || '纯文本';
+            ui.lang.setAttribute('aria-label', `代码语言：${lang || '纯文本'}`);
+        }
+
+        // Another language for the code block being edited: the first word
+        // of its info string (anything after it stays; none for plain
+        // text). The caret goes back into the code.
+        function setCodeLanguage(lang) {
+            const b = active;
+            if (!b || b.mode !== 'code') return;
+            const ui = b.ui;
+            const rest = ui.parts.info.trim().replace(/^\S*\s*/, '');
+            const info = lang && rest ? `${lang} ${rest}` : lang;
+            if (info !== ui.parts.info.trim()) {
+                ui.parts.info = info;
+                ui.parts.open = ui.parts.fence + info + '\n';
+                showLanguage(ui);
+                commitParts(b, 'command');
+                paintCode(ui);
+            }
+            editing = true;
+            ui.input.focus({ preventScroll: true });
+        }
 
         // Line numbers, and a textarea exactly as tall as its lines (plus a
         // horizontal scrollbar when a line is too long)
@@ -1267,10 +1305,6 @@
         // Write a code/formula editor back into the document
         function commitParts(b, kind) {
             const ui = b.ui;
-            if (b.mode === 'code') {
-                ui.parts.info = ui.lang.value.trim();
-                ui.parts.open = ui.parts.fence + ui.parts.info + '\n';
-            }
             const old = sourceOf(b);
             const next = ui.parts.open + ui.input.value + ui.parts.close;
             if (next === old) return;
@@ -1921,6 +1955,53 @@
             return { el: src, kind: b.kind, start: base + s.start, end: base + s.end, collapsed: s.start === s.end };
         }
 
+        // --- Links: the link bubble ---------------------------------------------
+
+        // The link the caret is in, in the text being edited: its range in
+        // the document and the boxes of its source on screen. The preview
+        // of an inline formula keeps the place under the caret to itself.
+        function caretLink() {
+            const b = active;
+            const src = textEditor(b);
+            if (!visible || !src || b.gap || composing || document.activeElement !== src || !bubble.hidden) return null;
+            const s = readSelection(src);
+            if (!s || s.start !== s.end) return null;
+            const link = MDE.links.at(src.textContent, s.start, s.end, resolveRef);
+            if (!link) return null;
+            const rects = Array.from(rangeIn(src, link.from, link.to).getClientRects());
+            const base = textBase(b);
+            return { ...link, from: base + link.from, to: base + link.to, rects };
+        }
+
+        // The source of a link in a rendered block (or in a rendered cell of
+        // the table being edited). The anchor is the k-th one with its
+        // address in its block (its cell, in a table), so it shows the k-th
+        // link with that address in the source. Null when there is none,
+        // e.g. for a link written in HTML.
+        function linkOf(a) {
+            const el = a.closest('.lv-block');
+            const b = el && el.parentElement === root ? blockOf(el) : null;
+            if (!b || b.gap || b.mode === 'source') return null;
+            const address = a.getAttribute('href');
+            let scope = el;
+            let start = b.start;
+            let source = sourceOf(b);
+            const td = b.kind === 'table' ? a.closest('td, th') : null;
+            if (td) {
+                const parsed = b.mode === 'table' ? b.ui.parsed : MDE.table.parse(source);
+                const row = parsed.rows[td.parentElement.rowIndex];
+                const cell = row && row.cells[td.cellIndex];
+                if (!cell) return null;
+                scope = td;
+                start = b.start + cell.from;
+                source = cell.text;
+            }
+            const anchors = Array.from(scope.querySelectorAll('a[href]')).filter((x) => x.getAttribute('href') === address);
+            const links = MDE.links.scan(source, resolveRef).filter((link) => link.href === address);
+            const link = links[anchors.indexOf(a)];
+            return link ? { ...link, from: start + link.from, to: start + link.to } : null;
+        }
+
         // --- Whole blocks: the block handle and its menu ------------------------
 
         // The block an element of the live view shows (null once it is gone)
@@ -2069,9 +2150,6 @@
                     b.ui.timer = setTimeout(() => paintMath(b.ui), MATH_PREVIEW_DELAY);
                 }
                 if (!composing && !e.isComposing) commitParts(b, historyKind(e.inputType));
-            } else if (b.mode === 'code' && e.target === b.ui.lang) {
-                commitParts(b, 'insert');
-                paintCode(b.ui);
             }
         });
 
@@ -2118,13 +2196,8 @@
                 if (active === b) insertBelow(b);
                 return;
             }
-            if (e.target === b.ui.lang) {
-                if (e.key === 'Enter' || e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    b.ui.input.focus();
-                }
-                return;
-            }
+            // The language chip is a button (live-tools.js opens its menu)
+            if (e.target === b.ui.lang) return;
             switch (e.key) {
                 case 'Enter':
                     if (source && plain) {
@@ -2311,6 +2384,16 @@
             slashRect,
             selectionRect,
             selectionState,
+
+            // The link bubble
+            caretLink,
+            linkOf,
+
+            // The language menu of the code block being edited
+            setCodeLanguage(lang) {
+                flush();
+                setCodeLanguage(lang);
+            },
 
             // The table toolbar
             tableState() {

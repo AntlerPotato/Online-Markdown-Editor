@@ -1,19 +1,38 @@
 // Floating tools of live mode: the slash menu (type "/" on an empty line to
 // insert a block, keep typing to filter it), the formatting toolbar over
-// selected text and the toolbar of the table being edited. All are
-// popovers, so only one floating panel is open at a time; focus stays in
-// the text, and live.js hands them their keys.
+// selected text, the toolbar of the table being edited, the bubble of a
+// link and the language menu of a code block. The menus and toolbars are
+// popovers, so only one of them is open at a time; focus stays in the
+// text, and live.js hands them their keys. The link bubble is not a
+// popover: it scrolls with the text and leaves the others alone.
 (function (MDE) {
     const { popover } = MDE;
 
     // Kinds of block shown as code-like source, where formatting makes no sense
     const PLAIN_KINDS = new Set(['code', 'html', 'def', 'hr']);
     const COARSE = window.matchMedia ? window.matchMedia('(pointer: coarse)') : { matches: false };
+    const LINK_DELAY = 300;    // ms the mouse rests on a link before its bubble shows
+    const LINK_LINGER = 200;   // ms the bubble stays after the mouse leaves (time to reach it)
+
+    // The code language menu: highlight.js names (the languages its common
+    // build highlights) and the other words that find them; "" is plain text
+    const LANGUAGES = [
+        ['python', 'py'], ['javascript', 'js jsx node'], ['typescript', 'ts tsx'], ['bash', 'sh shell zsh'],
+        ['json', ''], ['html', 'htm'], ['css', ''], ['java', ''], ['c', 'h'], ['cpp', 'c++ hpp'],
+        ['csharp', 'cs c#'], ['go', 'golang'], ['rust', 'rs'], ['sql', ''], ['yaml', 'yml'],
+        ['markdown', 'md'], ['php', ''], ['ruby', 'rb'], ['kotlin', 'kt'], ['swift', ''], ['xml', 'svg'],
+        ['diff', 'patch'], ['scss', 'sass'], ['less', ''], ['lua', ''], ['r', ''], ['perl', 'pl'],
+        ['objectivec', 'objc'], ['makefile', 'make'], ['ini', 'toml'], ['graphql', 'gql'], ['vbnet', 'vb'],
+        ['', 'text txt plain plaintext 纯文本 chunwenben cwb']
+    ].map(([name, words]) => ({ name, words: [name || '纯文本'].concat(words.split(' ')).filter(Boolean) }));
 
     const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
     const normalize = (text) => text.toLowerCase().replace(/\s+/g, '');
 
-    MDE.createLiveTools = function ({ live, scroller, slashMenu, toolbar, tableBar, tip }) {
+    // links: what the link bubble's buttons do ({ open(href), edit(link,
+    // { anchor, rect, editing }), copy(url), unlink(link, { editing }) },
+    // from app.js; editing: a block was being edited)
+    MDE.createLiveTools = function ({ live, scroller, slashMenu, toolbar, tableBar, tip, linkBubble, langMenu, links }) {
         const isOpen = (panel) => {
             const open = popover.current();
             return !!open && open.panel === panel;
@@ -223,6 +242,7 @@
         // Show, move or hide the toolbars: the formatting one while text is
         // selected, else the table one while a table cell is being edited
         function refresh() {
+            refreshLink();
             const state = dragging ? null : live.selectionState();
             const key = state && `${state.start}:${state.end}`;
             if (dismissed && dismissed !== key) dismissed = null;
@@ -258,7 +278,7 @@
 
         // No toolbar while a selection is being dragged out
         scroller.addEventListener('pointerdown', (e) => {
-            if (e.pointerType !== 'mouse' || e.button !== 0) return;
+            if (e.pointerType !== 'mouse' || e.button !== 0 || linkBubble.contains(e.target)) return;
             dragging = true;
             refresh();
         });
@@ -291,13 +311,336 @@
             tip.hidden = true;
         }
 
-        [toolbar, tableBar].forEach((bar) => {
+        [toolbar, tableBar, linkBubble].forEach((bar) => {
             bar.addEventListener('pointerover', (e) => {
                 const button = e.target.closest('.tb');
                 if (button && e.pointerType === 'mouse') showTip(button, bar);
             });
             bar.addEventListener('pointerleave', hideTip);
             bar.addEventListener('click', hideTip);
+        });
+
+        // ====================================================================
+        // Link bubble
+        // ====================================================================
+        // Under a link the mouse rests on (in the rendered text) or the link
+        // the caret is in (in the source being edited): its address, and
+        // buttons to open it, edit it, copy the address and take the link
+        // off. The link is looked up again when a button is used, so the
+        // text may change while the bubble shows.
+
+        const linkAddress = linkBubble.querySelector('.link-bubble-url');
+        const linkButton = (name) => linkBubble.querySelector(`[data-link="${name}"]`);
+        let linkShown = null;   // { a: the anchor under the mouse } or { caret: true }
+        let linkPending = null; // the anchor the mouse is waiting on
+        let linkTimer = 0;
+        let lingerTimer = 0;
+
+        // Under the link (above it when there is no room below), lined up
+        // with its start, or with its last line's start when it wraps
+        function placeLink(rects) {
+            const box = scroller.getBoundingClientRect();
+            const first = rects[0];
+            const last = rects[rects.length - 1];
+            const lastLine = rects.filter((r) => r.bottom > last.top + 2);
+            const width = linkBubble.offsetWidth;
+            const height = linkBubble.offsetHeight;
+            let top = last.bottom + 6;
+            if (top + height > box.bottom - 8 && first.top - height - 6 >= box.top + 8) top = first.top - height - 6;
+            const left = clamp(Math.min(...lastLine.map((r) => r.left)), box.left + 8, box.left + scroller.clientWidth - width - 8);
+            linkBubble.style.left = Math.round(left - box.left + scroller.scrollLeft) + 'px';
+            linkBubble.style.top = Math.round(top - box.top + scroller.scrollTop) + 'px';
+            linkBubble.dataset.side = top < first.top ? 'above' : 'below';
+        }
+
+        // link: where it is in the source (null when it can't be found
+        // there: then it can only be opened and copied)
+        function showLink(shown, link, address, rects) {
+            linkShown = shown;
+            linkAddress.textContent = address;
+            linkAddress.title = address;
+            linkButton('open').setAttribute('aria-label', address.startsWith('#') ? '跳到文中位置' : '在新标签页打开');
+            linkButton('edit').setAttribute('aria-disabled', String(!link));
+            linkButton('unlink').setAttribute('aria-disabled', String(!link || MDE.links.unlink(link) === null));
+            linkBubble.hidden = false;
+            placeLink(rects);
+        }
+
+        function hideLink() {
+            clearTimeout(lingerTimer);
+            if (!linkShown) return;
+            linkShown = null;
+            linkBubble.hidden = true;
+            hideTip();
+        }
+
+        // The caret's link, unless the mouse is on one
+        function refreshLink() {
+            if (linkShown && linkShown.a) {
+                if (linkShown.a.isConnected) return;
+                hideLink();
+            }
+            const link = dragging ? null : live.caretLink();
+            if (link && link.rects.length) showLink({ caret: true }, link, link.url, link.rects);
+            else hideLink();
+        }
+
+        function hoverLink(a) {
+            linkPending = null;
+            const open = popover.current();
+            const busy = open && open.panel !== toolbar && open.panel !== tableBar;
+            const rects = a.isConnected ? Array.from(a.getClientRects()) : [];
+            if (busy || !rects.length || document.body.classList.contains('is-dragging-block')) return;
+            const link = live.linkOf(a);
+            showLink({ a }, link, link ? link.url : a.getAttribute('href'), rects);
+        }
+
+        // The mouse left the link and the bubble: back to the caret's link
+        function linger() {
+            clearTimeout(lingerTimer);
+            lingerTimer = setTimeout(() => {
+                hideLink();
+                refreshLink();
+            }, LINK_LINGER);
+        }
+
+        // The mouse on a link of the rendered text: its bubble after a
+        // moment, at once when another link's bubble is showing
+        scroller.addEventListener('pointerover', (e) => {
+            if (e.pointerType !== 'mouse') return;
+            if (linkBubble.contains(e.target)) {
+                clearTimeout(lingerTimer);
+                return;
+            }
+            const a = e.target.closest('a[href]');
+            if (!a || a.closest('.toc') || e.buttons) return;
+            clearTimeout(lingerTimer);
+            if ((linkShown && linkShown.a === a) || linkPending === a) return;
+            clearTimeout(linkTimer);
+            linkPending = a;
+            linkTimer = setTimeout(() => hoverLink(a), linkShown && linkShown.a ? 0 : LINK_DELAY);
+        });
+
+        scroller.addEventListener('pointerout', (e) => {
+            if (e.pointerType !== 'mouse') return;
+            const from = e.target.closest('a[href]') || (linkBubble.contains(e.target) ? linkBubble : null);
+            const to = e.relatedTarget;
+            if (!from || (to && (from.contains(to) || linkBubble.contains(to) || (linkShown && linkShown.a && linkShown.a.contains(to))))) return;
+            if (from === linkPending) {
+                clearTimeout(linkTimer);
+                linkPending = null;
+            }
+            if (linkShown && linkShown.a) linger();
+        });
+
+        // A press in the text (it may start editing the link's block)
+        scroller.addEventListener('pointerdown', (e) => {
+            if (linkBubble.contains(e.target)) return;
+            clearTimeout(linkTimer);
+            linkPending = null;
+            if (linkShown && linkShown.a) hideLink();
+        }, true);
+
+        window.addEventListener('resize', () => {
+            if (linkShown && linkShown.a) hideLink();
+            else if (linkShown) refreshLink();
+        });
+
+        linkBubble.addEventListener('mousedown', (e) => e.preventDefault());
+
+        linkBubble.addEventListener('click', (e) => {
+            const button = e.target.closest('[data-link]');
+            if (!button || button.getAttribute('aria-disabled') === 'true' || !linkShown) return;
+            const a = linkShown.a;
+            if (a && !a.isConnected) {
+                hideLink();
+                return;
+            }
+            const link = a ? live.linkOf(a) : live.caretLink();
+            if (!a && !link) {
+                hideLink();
+                return;
+            }
+            const action = button.dataset.link;
+            if (action === 'open') {
+                const href = a ? a.getAttribute('href') : link.href;
+                if (href !== null) links.open(href);
+            } else if (action === 'copy') {
+                links.copy(link ? link.url : a.getAttribute('href'));
+            } else if (link && action === 'edit') {
+                hideLink();
+                links.edit(link, {
+                    anchor: button,
+                    rect: a ? () => (a.isConnected ? a.getBoundingClientRect() : null) : () => live.selectionRect(),
+                    editing: !!live.activeElement()
+                });
+            } else if (link && action === 'unlink') {
+                hideLink();
+                links.unlink(link, { editing: !!live.activeElement() });
+            }
+        });
+
+        // ====================================================================
+        // Code language menu
+        // ====================================================================
+        // Opened from the language chip of the code block being edited (or
+        // a click on the language of a rendered one): a search field over
+        // the languages. Typing filters them, the arrow keys choose, Enter
+        // takes the choice; a language that isn't listed can be used as
+        // typed.
+
+        const langSearch = langMenu.querySelector('input');
+        const langList = langMenu.querySelector('[role="listbox"]');
+        let langChip = null;
+        let langShown = [];     // the options shown: { el, name }
+        let langIndex = 0;
+
+        function langOption(name, current, tag) {
+            const el = document.createElement('div');
+            el.className = 'menu-item lang-item' + (current ? ' is-current' : '');
+            el.id = `lang-${langShown.length}`;
+            el.setAttribute('role', 'option');
+            el.setAttribute('aria-selected', 'false');
+            el.textContent = name || '纯文本';
+            if (tag) {
+                const span = document.createElement('span');
+                span.className = 'lang-tag';
+                span.textContent = tag;
+                el.appendChild(span);
+            } else if (current) {
+                el.insertAdjacentHTML('beforeend', '<svg class="menu-tick" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg>');
+            }
+            langShown.push({ el, name });
+            return el;
+        }
+
+        // The languages that match the query, the best first (one of its
+        // words is the query, else its name starts with it, else another
+        // word does, else one holds it): "js" finds javascript before json.
+        // The block's own language comes first when it isn't listed.
+        function fillLanguages(query) {
+            const q = normalize(query);
+            const lang = langChip.dataset.lang || '';
+            const own = lang.toLowerCase();
+            const known = LANGUAGES.find((entry) => entry.words.includes(own) || entry.name === own);
+            const entries = known || !lang ? LANGUAGES : [{ name: lang, words: [own] }].concat(LANGUAGES);
+            const scored = [];
+            entries.forEach((entry) => {
+                const words = entry.words.map(normalize);
+                const score = !q ? 0
+                    : words.includes(q) ? 0
+                    : words[0].startsWith(q) ? 1
+                    : words.some((word) => word.startsWith(q)) ? 2
+                    : words.some((word) => word.includes(q)) ? 3
+                    : 4;
+                if (score < 4) scored.push({ entry, score, exact: words.includes(q) });
+            });
+            scored.sort((a, b) => a.score - b.score);
+            langShown = [];
+            const items = scored.map(({ entry }) => langOption(entry.name, entry === known || (!known && entry.name === lang)));
+            // Any other name, as typed (an info string's first word)
+            const typed = query.trim();
+            if (typed && !scored.some((item) => item.exact) && /^[^\s`]+$/.test(typed)) items.push(langOption(typed, false, '使用这个名称'));
+            langList.replaceChildren(...items);
+            if (!items.length) {
+                const empty = document.createElement('div');
+                empty.className = 'lang-empty';
+                empty.textContent = '没有这种语言';
+                langList.appendChild(empty);
+            }
+            const current = q ? 0 : Math.max(0, langShown.findIndex((option) => option.el.classList.contains('is-current')));
+            selectLanguage(current);
+            popover.update();
+        }
+
+        function selectLanguage(i) {
+            if (!langShown.length) {
+                langSearch.removeAttribute('aria-activedescendant');
+                return;
+            }
+            langIndex = (i + langShown.length) % langShown.length;
+            const option = langShown[langIndex].el;
+            langShown.forEach(({ el }) => el.setAttribute('aria-selected', String(el === option)));
+            langSearch.setAttribute('aria-activedescendant', option.id);
+            if (option.offsetTop < langList.scrollTop) langList.scrollTop = option.offsetTop - 2;
+            else if (option.offsetTop + option.offsetHeight > langList.scrollTop + langList.clientHeight) {
+                langList.scrollTop = option.offsetTop + option.offsetHeight - langList.clientHeight + 2;
+            }
+        }
+
+        function openLanguages(chip) {
+            langChip = chip;
+            langSearch.value = '';
+            popover.open(langMenu, chip, {
+                onOpen: () => {
+                    langList.scrollTop = 0;
+                    fillLanguages('');
+                    langSearch.focus();
+                },
+                onClose: () => {
+                    langChip = null;
+                }
+            });
+        }
+
+        function chooseLanguage(option) {
+            if (!option) return;
+            popover.close(false);
+            live.setCodeLanguage(option.name);
+        }
+
+        langMenu.addEventListener('mousedown', (e) => {
+            if (e.target !== langSearch) e.preventDefault();
+        });
+
+        langSearch.addEventListener('input', () => fillLanguages(langSearch.value));
+
+        langSearch.addEventListener('keydown', (e) => {
+            if (e.isComposing || e.keyCode === 229) return;
+            if (e.key === 'ArrowDown') selectLanguage(langIndex + 1);
+            else if (e.key === 'ArrowUp') selectLanguage(langIndex - 1);
+            else if (e.key === 'Enter') chooseLanguage(langShown[langIndex]);
+            else if (e.key === 'Tab') popover.close(true);
+            else return;
+            e.preventDefault();
+        });
+
+        let langPointer = '';
+        langList.addEventListener('pointermove', (e) => {
+            const at = `${e.screenX},${e.screenY}`;
+            if (at === langPointer) return;
+            langPointer = at;
+            const index = langShown.findIndex(({ el }) => el === e.target.closest('[role="option"]'));
+            if (index !== -1 && index !== langIndex) selectLanguage(index);
+        });
+
+        langList.addEventListener('click', (e) => {
+            const el = e.target.closest('[role="option"]');
+            chooseLanguage(langShown.find((option) => option.el === el));
+        });
+
+        // The chip: a click, or ↓ / ↑ on it
+        scroller.addEventListener('click', (e) => {
+            const chip = e.target.closest('.lv-lang');
+            if (chip) {
+                if (isOpen(langMenu)) popover.close(true);
+                else openLanguages(chip);
+                return;
+            }
+            // The language of a rendered code block: live.js has just
+            // started editing it
+            if (e.target.closest('.code-lang') && !e.defaultPrevented) {
+                const el = live.activeElement();
+                const active = el && el.querySelector('.lv-lang');
+                if (active) openLanguages(active);
+            }
+        });
+
+        scroller.addEventListener('keydown', (e) => {
+            if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && e.target.classList.contains('lv-lang') && !isOpen(langMenu)) {
+                e.preventDefault();
+                openLanguages(e.target);
+            }
         });
 
         // ====================================================================

@@ -77,14 +77,26 @@
         },
         onKey: (key) => liveTools.key(key)
     });
-    // The slash menu and the toolbar over selected text
+    // The slash menu, the toolbars, the link bubble and the code language menu
     const liveTools = MDE.createLiveTools({
         live,
         scroller: liveScroll,
         slashMenu: $('slashMenu'),
         toolbar: inlineToolbar,
         tableBar: $('tableToolbar'),
-        tip: $('floatTip')
+        tip: $('floatTip'),
+        linkBubble: $('linkBubble'),
+        langMenu: $('langMenu'),
+        links: {
+            open: (href) => followLink(href, liveDoc, liveScroll),
+            edit: (link, { anchor, rect, editing }) => openLinkDialog(false, anchor, { link, rect, editing }),
+            copy: (url) => copyText(url).then((ok) => showToast(ok ? '已复制链接' : '复制失败', ok)),
+            unlink: (link, { editing }) => {
+                unlinkLink(link);
+                // Focus on the view (so Ctrl+Z works), no block opened
+                if (!editing) live.stopEditing(true);
+            }
+        }
     });
     // The handle beside each block and its menu
     const liveBlocks = MDE.createLiveBlocks({
@@ -255,16 +267,20 @@
         const link = e.target.closest('a[href]');
         if (!link) return;
         if (isLive && !link.closest('.toc') && !(e.ctrlKey || e.metaKey)) return;
-        const href = link.getAttribute('href');
         e.preventDefault();
+        followLink(link.getAttribute('href'), container, scroller);
+    }
+
+    // An in-page link (#id) scrolls to its target; others open in a new
+    // tab, keeping the editor open
+    function followLink(href, container, scroller) {
         if (href.startsWith('#')) {
             let id = href.slice(1);
             try { id = decodeURIComponent(id); } catch (err) { /* keep raw id */ }
             const target = container.querySelector('#' + CSS.escape(id));
             if (target) scroller.scrollTo({ top: contentTop(target, scroller) - 16, behavior: 'smooth' });
         } else {
-            // Keep the editor open; external links go to a new tab
-            window.open(link.href, '_blank', 'noopener');
+            window.open(href, '_blank', 'noopener');
         }
     }
 
@@ -610,23 +626,42 @@
     const linkUrl = $('linkUrl');
     const linkAsImage = $('linkAsImage');
     let linkRange = null;
+    let linkEdit = null;      // the link being edited (null: a new one is inserted)
+    let linkDone = null;      // where focus goes once the dialog is done
 
     function updateLinkLabels() {
         const image = linkAsImage.checked;
-        $('linkDialogTitle').textContent = image ? '插入图片' : '插入链接';
+        $('linkDialogTitle').textContent = linkEdit ? '编辑链接' : image ? '插入图片' : '插入链接';
         $('linkTextLabel').textContent = image ? '图片描述' : '显示文字';
         $('linkUrlLabel').textContent = image ? '图片地址' : '链接地址';
+        $('linkSubmit').textContent = linkEdit ? '保存' : '插入';
+        $('linkImageOption').hidden = !!linkEdit;
+    }
+
+    // Reference definitions ([label]: url) of a text, read only once a
+    // reference link is looked up
+    function refsOf(value) {
+        let defined = null;
+        return (label) => {
+            if (!defined) defined = marked.lexer(value).links || {};
+            const link = defined[label.replace(/\s+/g, ' ').toLowerCase()];
+            return link ? link.href : undefined;
+        };
     }
 
     // Opened from the toolbar, the dialog sits under its button; from the
-    // selection toolbar or Ctrl+K in live mode, at the selection
-    function openLinkDialog(image, el) {
+    // selection toolbar or Ctrl+K in live mode, at the selection. With the
+    // caret (or the selection) in a link, it edits that link. The link
+    // bubble opens it for its link: edit = { link, rect, editing (a block
+    // of live mode was being edited) }.
+    function openLinkDialog(image, el, edit = null) {
         const { start, end, value } = editor.getSelection();
         const selected = value.slice(start, end);
         const isUrl = /^(https?:\/\/|www\.)\S+$/.test(selected.trim());
         linkRange = { start, end };
-        linkText.value = isUrl ? '' : selected.replace(/\s*\n\s*/g, ' ');
-        linkUrl.value = isUrl ? selected.trim() : 'https://';
+        linkEdit = edit ? edit.link : image ? null : MDE.links.at(value, start, end, refsOf(value));
+        linkText.value = linkEdit ? linkEdit.text.replace(/\s*\n\s*/g, ' ') : isUrl ? '' : selected.replace(/\s*\n\s*/g, ' ');
+        linkUrl.value = linkEdit ? linkEdit.url : isUrl ? selected.trim() : 'https://';
         linkUrl.removeAttribute('aria-invalid');
         linkAsImage.checked = image;
         updateLinkLabels();
@@ -634,9 +669,12 @@
         const button = $(image ? 'imageButton' : 'linkButton');
         const fromToolbar = el === button;
         const atSelection = !fromToolbar && state.view === 'live' && !!live.selectionRect();
-        popover.open(linkDialog, el instanceof Element && inlineToolbar.contains(el) ? el : button, {
-            rect: atSelection ? () => live.selectionRect() : null,
-            returnFocus: fromToolbar ? null : focusEditor,
+        // From the bubble of a link nobody was editing: no block opens
+        linkDone = edit && !edit.editing ? () => live.stopEditing(true) : focusEditor;
+        const anchor = edit || (el instanceof Element && inlineToolbar.contains(el)) ? el : button;
+        popover.open(linkDialog, anchor, {
+            rect: edit ? edit.rect : atSelection ? () => live.selectionRect() : null,
+            returnFocus: fromToolbar ? null : linkDone,
             onOpen: () => {
                 linkUrl.focus();
                 linkUrl.setSelectionRange(linkUrl.value.length, linkUrl.value.length);
@@ -656,13 +694,39 @@
             return;
         }
         popover.close(false);
-        commands.insertLink({ text: linkText.value.trim(), url, image: linkAsImage.checked, ...linkRange });
+        if (linkEdit) {
+            editLink(linkEdit, linkText.value.trim(), url);
+            linkDone();
+        } else {
+            commands.insertLink({ text: linkText.value.trim(), url, image: linkAsImage.checked, ...linkRange });
+        }
     });
 
     linkDialog.querySelector('[data-dismiss]').addEventListener('click', () => {
         popover.close(false);
-        focusEditor();
+        linkDone();
     });
+
+    // The caret goes with the text: after an edited link when it was in it
+    function moveAround(link, length, inside) {
+        const { start, end } = editor.getSelection();
+        const move = (pos) => (pos <= link.from ? pos : pos >= link.to ? pos + length - (link.to - link.from) : inside(pos));
+        return [move(start), move(end)];
+    }
+
+    function editLink(link, text, url) {
+        const next = MDE.links.rewrite(link, text, url);
+        if (next === null) return;
+        editor.replaceRange(link.from, link.to, next, ...moveAround(link, next.length, () => link.from + next.length));
+    }
+
+    // Take a link off, leaving its text
+    function unlinkLink(link) {
+        const text = MDE.links.unlink(link);
+        if (text === null) return;
+        const inside = (pos) => clamp(pos - 1, link.from, link.from + text.length);
+        editor.replaceRange(link.from, link.to, text, ...moveAround(link, text.length, inside));
+    }
 
     // ========================================================================
     // Table picker
@@ -838,9 +902,10 @@
     }
 
     textarea.addEventListener('keydown', handleShortcut);
-    liveDoc.addEventListener('keydown', (e) => {
-        // The code-language field is an ordinary text field
-        if (!e.target.classList.contains('lv-lang')) handleShortcut(e);
+    liveScroll.addEventListener('keydown', (e) => {
+        // With no block being edited (focus on the view, e.g. after Esc)
+        // only undo and redo
+        if (e.target !== liveScroll || /^[zy]$/i.test(e.key)) handleShortcut(e);
     });
 
     // Toolbar: one tab stop, arrow keys move between the visible buttons

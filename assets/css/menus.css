@@ -1,7 +1,7 @@
 /* ==========================================================================
    Dropdown menus and popovers (file, paragraph style, more tools,
-   table picker, link dialog, and live mode's slash menu and toolbar
-   over selected text)
+   table picker, link dialog, and live mode's slash menu, toolbars, link
+   bubble and code language menu)
    ========================================================================== */
 
 .popover {
@@ -478,6 +478,161 @@
 @media (pointer: coarse) {
     .float-bar .tb {
         width: 40px;
+        height: 40px;
+    }
+}
+
+/* --- Live mode: link bubble ------------------------------------------------ */
+/* Under a link (live-tools.js places it); it sits in the live view and
+   scrolls with the text */
+
+.link-bubble {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 5;
+    max-width: calc(100% - 16px);
+    padding: 4px 4px 4px 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-pop);
+    color: var(--text);
+    animation: popover-in 0.12s ease-out;
+}
+
+.link-bubble-globe {
+    flex: none;
+    color: var(--muted);
+}
+
+.link-bubble-url {
+    min-width: 0;
+    max-width: 170px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    color: var(--link);
+}
+
+.link-bubble .tb {
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border-radius: var(--radius-sm);
+}
+
+.link-bubble .tb-sep {
+    height: 18px;
+    margin: 0 3px;
+}
+
+@media (pointer: coarse) {
+    .link-bubble .tb {
+        width: 40px;
+        height: 40px;
+    }
+}
+
+/* --- Live mode: code language menu ---------------------------------------- */
+
+.lang-menu {
+    width: 220px;
+    max-width: calc(100vw - 16px);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+}
+
+.lang-search {
+    height: 36px;
+    flex: none;
+    margin-bottom: 6px;
+    padding: 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--surface-sunken);
+    transition: border-color 0.15s ease;
+}
+
+.lang-search:focus-within {
+    border-color: var(--accent);
+}
+
+.lang-search svg {
+    flex: none;
+    color: var(--muted);
+}
+
+.lang-search input {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    font-size: 13px;
+    color: var(--text);
+}
+
+.lang-search input::placeholder {
+    color: var(--faint);
+}
+
+.lang-list {
+    position: relative;   /* offsetParent of the options, for scrolling them into view */
+    max-height: 248px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.lang-item {
+    height: 34px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.lang-item[aria-selected="true"] {
+    background: var(--hover-strong);
+}
+
+.lang-item.is-current {
+    color: var(--link);
+    font-weight: 500;
+}
+
+.lang-item .menu-tick {
+    visibility: visible;
+}
+
+.lang-tag {
+    margin-left: auto;
+    padding-left: 12px;
+    font-family: var(--font-ui);
+    font-size: 11.5px;
+    font-weight: 400;
+    color: var(--muted);
+}
+
+.lang-empty {
+    padding: 8px 10px;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+@media (pointer: coarse) {
+    .lang-item {
         height: 40px;
     }
 }
