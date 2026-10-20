@@ -4,8 +4,16 @@
         bold: { marker: '**', placeholder: '粗体文本', re: /(\*\*|__)(?=\S)(.+?)(?<=\S)\1/g },
         italic: { marker: '*', placeholder: '斜体文本', re: /(?<![*\\])\*(?![\s*])(.+?)(?<![\s*\\])\*(?!\*)|(?<![\w\\])_(?![\s_])(.+?)(?<![\s_\\])_(?!\w)/g },
         strike: { marker: '~~', placeholder: '删除线文本', re: /~~(?=\S)(.+?)(?<=\S)~~/g },
-        highlight: { marker: '==', placeholder: '高亮文本', re: /==(?=\S)(.+?)(?<=\S)==/g }
+        highlight: { marker: '==', placeholder: '高亮文本', re: /==(?=\S)(.+?)(?<=\S)==/g },
+        code: { marker: '`', placeholder: '代码', re: /(?<!`)`(?!`)([^`\n]+?)`(?!`)/g },
+        math: { marker: '$', placeholder: 'E=mc^2', re: /(?<![$\\])\$(?!\$)([^$\n]+?)\$(?!\$)/g }
     };
+
+    // What "clear formatting" takes apart: every inline wrap, then links
+    // (their text stays). Images are left alone.
+    const CLEARABLE = ['code', 'math', 'bold', 'strike', 'highlight', 'italic']
+        .map((name) => ({ re: INLINE[name].re, len: INLINE[name].marker.length }))
+        .concat({ re: /(?<![!\\])\[([^\]\n]*)\]\([^)\n]*\)/g, link: true });
 
     const LIST_PREFIX = /^(\s*)(?:[-*+][ \t]+\[[ xX]\][ \t]+|[-*+][ \t]+|\d{1,9}[.)][ \t]+)/;
     const LISTS = {
@@ -66,6 +74,45 @@
         function isActive(name) {
             const { start, end, value } = editor.getSelection();
             return !!findSpan(name, value, start, end);
+        }
+
+        // Remove the inline formatting in the selection: every wrap that
+        // overlaps it (or holds the caret) is taken off, one at a time, so
+        // nested ones like ***text*** come apart too
+        function clearInline() {
+            const { start, end, value } = editor.getSelection();
+            const lineStart = lineStartOf(value, start);
+            let lineEnd = value.indexOf('\n', end);
+            if (lineEnd === -1) lineEnd = value.length;
+            let text = value.slice(lineStart, lineEnd);
+            let from = start - lineStart;
+            let to = end - lineStart;
+
+            const unwrapOne = () => {
+                for (const { re, len, link } of CLEARABLE) {
+                    re.lastIndex = 0;
+                    let m;
+                    while ((m = re.exec(text))) {
+                        const a = m.index;
+                        const z = a + m[0].length;
+                        if (a >= to || z <= from) continue;
+                        const inner = link ? m[1] : m[0].slice(len, m[0].length - len);
+                        const lead = link ? 1 : len;
+                        const map = (pos) => (pos <= a ? pos
+                            : pos >= z ? pos - (m[0].length - inner.length)
+                            : Math.min(Math.max(pos - lead, a), a + inner.length));
+                        text = text.slice(0, a) + inner + text.slice(z);
+                        from = map(from);
+                        to = map(to);
+                        re.lastIndex = 0;
+                        return true;
+                    }
+                }
+                return false;
+            };
+            let changed = false;
+            while (unwrapOne()) changed = true;
+            if (changed) editor.replaceRange(lineStart, lineEnd, text, lineStart + from, lineStart + to);
         }
 
         // --- Line-based edits -----------------------------------------------
@@ -213,6 +260,7 @@
         return {
             toggleInline,
             isActive,
+            clearInline,
             headingLevel,
             setHeading,
             toggleList,

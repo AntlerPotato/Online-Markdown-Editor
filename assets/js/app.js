@@ -18,6 +18,7 @@
     const headingMenu = $('headingMenu');
     const moreButton = $('moreButton');
     const moreMenu = $('moreMenu');
+    const inlineToolbar = $('inlineToolbar');
     const saveStatus = $('saveStatus');
 
     const DEFAULT_NAME = 'document.md';
@@ -65,7 +66,18 @@
         scroller: liveScroll,
         editor,
         onCaret: handleLiveCaret,
-        onRender: scheduleActiveHeading
+        onRender: scheduleActiveHeading,
+        onSlash: (query, el) => liveTools.slash(query, el),
+        onSelection: () => liveTools.selection(),
+        onKey: (key) => liveTools.key(key)
+    });
+    // The slash menu and the toolbar over selected text
+    const liveTools = MDE.createLiveTools({
+        live,
+        scroller: liveScroll,
+        slashMenu: $('slashMenu'),
+        toolbar: inlineToolbar,
+        tip: $('floatTip')
     });
 
     // ========================================================================
@@ -124,9 +136,11 @@
         else editor.focus();
     }
 
-    const formatButtons = ['bold', 'italic', 'strike', 'highlight'].map((name) => toolbar.querySelector(`[data-command="${name}"]`));
+    // Inline formats with a toggle button (in the toolbar or the selection toolbar)
+    const FORMATS = { bold: 'bold', italic: 'italic', strike: 'strike', highlight: 'highlight', 'inline-code': 'code', 'inline-math': 'math' };
+    const formatButtons = Array.from(document.querySelectorAll('[data-command][aria-pressed]')).filter((el) => el.dataset.command in FORMATS);
 
-    // Reflect the caret's context in the toolbar (paragraph style, B/I/S/H)
+    // Reflect the caret's context in the toolbars (paragraph style, B/I/S/H…)
     function updateFormatState() {
         const level = commands.headingLevel();
         const label = level ? `标题 ${level}` : '正文';
@@ -135,8 +149,11 @@
         headingMenu.querySelectorAll('[data-level]').forEach((item) => {
             item.setAttribute('aria-checked', String(Number(item.dataset.level) === level));
         });
+        const on = {};
         formatButtons.forEach((button) => {
-            button.setAttribute('aria-pressed', String(commands.isActive(button.dataset.command)));
+            const name = FORMATS[button.dataset.command];
+            if (!(name in on)) on[name] = commands.isActive(name);
+            button.setAttribute('aria-pressed', String(on[name]));
         });
     }
 
@@ -560,7 +577,9 @@
         $('linkUrlLabel').textContent = image ? '图片地址' : '链接地址';
     }
 
-    function openLinkDialog(image) {
+    // Opened from the toolbar, the dialog sits under its button; from the
+    // selection toolbar or Ctrl+K in live mode, at the selection
+    function openLinkDialog(image, el) {
         const { start, end, value } = editor.getSelection();
         const selected = value.slice(start, end);
         const isUrl = /^(https?:\/\/|www\.)\S+$/.test(selected.trim());
@@ -571,7 +590,12 @@
         linkAsImage.checked = image;
         updateLinkLabels();
 
-        popover.open(linkDialog, $(image ? 'imageButton' : 'linkButton'), {
+        const button = $(image ? 'imageButton' : 'linkButton');
+        const fromToolbar = el === button;
+        const atSelection = !fromToolbar && state.view === 'live' && !!live.selectionRect();
+        popover.open(linkDialog, el instanceof Element && inlineToolbar.contains(el) ? el : button, {
+            rect: atSelection ? () => live.selectionRect() : null,
+            returnFocus: fromToolbar ? null : focusEditor,
             onOpen: () => {
                 linkUrl.focus();
                 linkUrl.setSelectionRange(linkUrl.value.length, linkUrl.value.length);
@@ -691,9 +715,12 @@
         italic: () => commands.toggleInline('italic'),
         strike: () => commands.toggleInline('strike'),
         highlight: () => commands.toggleInline('highlight'),
+        'inline-code': () => commands.toggleInline('code'),
+        'inline-math': () => commands.toggleInline('math'),
+        'clear-format': () => commands.clearInline(),
         heading: (el) => commands.setHeading(Number(el.dataset.level)),
-        link: () => openLinkDialog(false),
-        image: () => openLinkDialog(true),
+        link: (el) => openLinkDialog(false, el),
+        image: (el) => openLinkDialog(true, el),
         table: openTablePicker,
         code: () => commands.codeBlock(),
         math: () => commands.mathBlock(),
@@ -714,8 +741,8 @@
 
     // Commands that edit the document (in live mode they act where the caret is)
     const EDIT_COMMANDS = new Set([
-        'undo', 'redo', 'bold', 'italic', 'strike', 'highlight', 'heading', 'link', 'image', 'table',
-        'code', 'math', 'quote', 'ul', 'ol', 'task', 'toc', 'hr'
+        'undo', 'redo', 'bold', 'italic', 'strike', 'highlight', 'inline-code', 'inline-math', 'clear-format',
+        'heading', 'link', 'image', 'table', 'code', 'math', 'quote', 'ul', 'ol', 'task', 'toc', 'hr'
     ]);
 
     function run(name, el) {
@@ -741,6 +768,7 @@
     });
 
     // Keep the editor focused (and its selection visible) when using the toolbar
+    // (the selection toolbar does the same in live-tools.js)
     toolbar.addEventListener('mousedown', (e) => {
         if (e.target.closest('.tb')) e.preventDefault();
     });
@@ -749,14 +777,20 @@
         if (!(e.ctrlKey || e.metaKey) || e.altKey || e.isComposing) return;
         const key = e.key.toLowerCase();
         let name = null;
+        let el = null;
         if (key === 'z') name = e.shiftKey ? 'redo' : 'undo';
         else if (key === 'y' && !e.shiftKey) name = 'redo';
         else if (key === 'b' && !e.shiftKey) name = 'bold';
         else if (key === 'i' && !e.shiftKey) name = 'italic';
         else if (key === 'k' && !e.shiftKey) name = 'link';
+        else if (/^[0-6]$/.test(key) && !e.shiftKey) {
+            // Ctrl+0 body text, Ctrl+1…6 headings
+            name = 'heading';
+            el = { dataset: { level: key } };
+        }
         if (name) {
             e.preventDefault();
-            run(name);
+            run(name, el);
         }
     }
 
@@ -857,6 +891,11 @@
 
     if (IS_MAC) {
         document.querySelectorAll('.menu-kbd').forEach((el) => { el.textContent = el.textContent.replace('Ctrl+', '⌘'); });
+        document.querySelectorAll('.kbd').forEach((el) => { if (el.textContent === 'Ctrl') el.textContent = '⌘'; });
+        document.querySelectorAll('[data-keys]').forEach((el) => { el.dataset.keys = el.dataset.keys.replace('Ctrl ', '⌘'); });
+        document.querySelectorAll('[aria-keyshortcuts]').forEach((el) => {
+            el.setAttribute('aria-keyshortcuts', el.getAttribute('aria-keyshortcuts').replace('Control+', 'Meta+'));
+        });
         toolbarButtons.forEach((el) => { el.title = el.title.replace('Ctrl+', '⌘'); });
     }
 

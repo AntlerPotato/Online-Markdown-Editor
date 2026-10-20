@@ -1,6 +1,7 @@
 // Dropdown menus and anchored popovers. Only one is open at a time; it is
-// positioned under its anchor, closes on outside click or Escape, and
-// menus get arrow-key navigation.
+// positioned under its anchor (or a box such as the caret, from
+// options.rect, or by options.place), closes on outside click or Escape,
+// and menus get arrow-key navigation.
 (function (MDE) {
     let current = null;
 
@@ -8,8 +9,10 @@
     const menuItems = (panel) => Array.from(panel.querySelectorAll('[role^="menuitem"]')).filter((el) => !el.closest('[hidden]'));
     const isMenu = (panel) => panel.getAttribute('role') === 'menu';
 
-    function place(panel, anchor) {
-        const rect = anchor.getBoundingClientRect();
+    function place(panel, rect) {
+        // A box scrolled out of view: keep the panel open but out of sight
+        panel.style.visibility = rect ? '' : 'hidden';
+        if (!rect) return;
         const viewportWidth = document.documentElement.clientWidth;
         const viewportHeight = window.innerHeight;
         const width = panel.offsetWidth;
@@ -24,14 +27,19 @@
         panel.style.top = Math.max(8, top) + 'px';
     }
 
+    function position({ panel, anchor, options }) {
+        if (options.place) options.place(panel);
+        else place(panel, options.rect ? options.rect() : anchor.getBoundingClientRect());
+    }
+
     function open(panel, anchor, options = {}) {
         if (current && current.panel === panel) return;
         close(false);
 
         current = { panel, anchor, options };
         panel.hidden = false;
-        place(panel, anchor);
-        anchor.setAttribute('aria-expanded', 'true');
+        position(current);
+        if (anchor.hasAttribute('aria-expanded')) anchor.setAttribute('aria-expanded', 'true');
         if (options.onOpen) options.onOpen(panel);
 
         if (isMenu(panel) && options.focus !== false) {
@@ -47,9 +55,12 @@
         const { panel, anchor, options } = current;
         current = null;
         panel.hidden = true;
-        anchor.setAttribute('aria-expanded', 'false');
+        if (anchor.hasAttribute('aria-expanded')) anchor.setAttribute('aria-expanded', 'false');
         if (options.onClose) options.onClose();
-        if (restoreFocus) anchor.focus();
+        if (restoreFocus) {
+            if (options.returnFocus) options.returnFocus();
+            else anchor.focus();
+        }
     }
 
     function toggle(panel, anchor, options) {
@@ -94,17 +105,21 @@
     });
 
     window.addEventListener('resize', () => {
-        if (current) place(current.panel, current.anchor);
+        if (current) position(current);
     });
 
     window.addEventListener('scroll', (e) => {
-        if (current && !current.panel.contains(e.target)) place(current.panel, current.anchor);
+        if (current && !current.panel.contains(e.target)) position(current);
     }, true);
 
     MDE.popover = {
         open,
         close,
         toggle,
+        // Position the open panel again (its content or its box changed)
+        update: () => {
+            if (current) position(current);
+        },
         current: () => current
     };
 })(window.MDE = window.MDE || {});

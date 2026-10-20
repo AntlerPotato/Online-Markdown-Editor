@@ -136,7 +136,7 @@
                 <div class="panes" id="panes">
                     <div class="pane pane-live" id="livePane">
                         <div class="preview-scroll live-scroll" id="liveScroll" role="region" aria-label="实时编辑" tabindex="0">
-                            <article class="markdown-preview live-doc" id="live" data-placeholder="直接开始写作"></article>
+                            <article class="markdown-preview live-doc" id="live" data-placeholder="输入 / 插入块，或直接开始写作"></article>
                         </div>
                     </div>
 
@@ -249,6 +249,46 @@
         </div>
     </form>
 
+    <!-- Slash menu (live mode): "/" typed on an empty line; typing filters it. Focus stays in the text. -->
+    <div class="popover slash-menu" id="slashMenu" hidden>
+        <div class="slash-list" id="slashList" role="listbox" aria-label="插入块">
+            <div class="slash-group" role="group" aria-labelledby="slashGroupBasic">
+                <div class="slash-group-label" id="slashGroupBasic">基础</div>
+                <div class="menu-item slash-item" role="option" id="slash-p" data-block="p" aria-selected="false" data-match="段落 文本 paragraph text zhengwen zw"><span class="slash-icon" aria-hidden="true"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 4v16"/><path d="M17 4v16"/><path d="M19 4H9.5a4.5 4.5 0 0 0 0 9H13"/></svg></span><span class="slash-label">正文</span><span class="menu-keys fine-only" aria-hidden="true"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">0</kbd></span></div>
+                <div class="menu-item slash-item" role="option" id="slash-h1" data-block="h1" aria-selected="false" data-match="一级标题 heading h1 title biaoti bt"><span class="slash-icon" aria-hidden="true">H1</span><span class="slash-label">标题 1</span><span class="menu-keys fine-only" aria-hidden="true"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">1</kbd></span><span class="slash-syntax coarse-only" aria-hidden="true">#</span></div>
+                <div class="menu-item slash-item" role="option" id="slash-h2" data-block="h2" aria-selected="false" data-match="二级标题 heading h2 subtitle biaoti bt"><span class="slash-icon" aria-hidden="true">H2</span><span class="slash-label">标题 2</span><span class="menu-keys fine-only" aria-hidden="true"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">2</kbd></span><span class="slash-syntax coarse-only" aria-hidden="true">##</span></div>
+                <div class="menu-item slash-item" role="option" id="slash-task" data-block="task" aria-selected="false" data-match="待办 todo task checkbox renwu rw"><span class="slash-icon" aria-hidden="true"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m9 12 2 2 4-4"/></svg></span><span class="slash-label">任务列表</span><span class="slash-syntax" aria-hidden="true">- [ ]</span></div>
+                <div class="menu-item slash-item" role="option" id="slash-ul" data-block="ul" aria-selected="false" data-match="列表 项目符号 bullet list ul liebiao lb"><span class="slash-icon" aria-hidden="true"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h12"/><path d="M9 12h12"/><path d="M9 18h12"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/></svg></span><span class="slash-label">无序列表</span><span class="slash-syntax" aria-hidden="true">-</span></div>
+                <div class="menu-item slash-item" role="option" id="slash-quote" data-block="quote" aria-selected="false" data-match="引用块 quote blockquote yinyong yy"><span class="slash-icon" aria-hidden="true"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h4v4c0 3-1.5 5-4 6"/><path d="M14 7h4v4c0 3-1.5 5-4 6"/></svg></span><span class="slash-label">引用</span><span class="slash-syntax" aria-hidden="true">&gt;</span></div>
+            </div>
+            <div class="slash-group" role="group" aria-labelledby="slashGroupInsert">
+                <div class="slash-group-label" id="slashGroupInsert">插入</div>
+                <div class="menu-item slash-item" role="option" id="slash-table" data-block="table" aria-selected="false" data-match="table biaoge bg"><span class="slash-icon" aria-hidden="true"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M12 3v18"/></svg></span><span class="slash-label">表格</span><span class="slash-syntax" aria-hidden="true">3 × 3</span></div>
+                <div class="menu-item slash-item" role="option" id="slash-code" data-block="code" aria-selected="false" data-match="代码 code codeblock pre daima dm"><span class="slash-icon" aria-hidden="true"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></svg></span><span class="slash-label">代码块</span><span class="slash-syntax" aria-hidden="true">```</span></div>
+                <div class="menu-item slash-item" role="option" id="slash-math" data-block="math" aria-selected="false" data-match="公式 数学 math formula equation latex gongshi gs"><span class="slash-icon" aria-hidden="true"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 7V5a1 1 0 0 0-1-1H6.5a.5.5 0 0 0-.4.8l4.5 6a2 2 0 0 1 0 2.4l-4.5 6a.5.5 0 0 0 .4.8H17a1 1 0 0 0 1-1v-2"/></svg></span><span class="slash-label">公式块</span><span class="slash-syntax" aria-hidden="true">$$</span></div>
+                <div class="menu-item slash-item" role="option" id="slash-html" data-block="html" aria-selected="false" data-match="网页 html web"><span class="slash-icon" aria-hidden="true"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/></svg></span><span class="slash-label">HTML 块</span><span class="slash-syntax" aria-hidden="true">```html</span></div>
+                <div class="menu-item slash-item" role="option" id="slash-toc" data-block="toc" aria-selected="false" data-match="大纲 contents toc mulu ml"><span class="slash-icon" aria-hidden="true"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M8 12h12"/><path d="M8 18h12"/></svg></span><span class="slash-label">目录</span><span class="slash-syntax" aria-hidden="true">[TOC]</span></div>
+            </div>
+        </div>
+        <div class="slash-foot" aria-hidden="true">
+            <span class="fine-only"><span><kbd class="kbd">↑</kbd> <kbd class="kbd">↓</kbd> 选择</span><span><kbd class="kbd">↵</kbd> 插入</span><span><kbd class="kbd">Esc</kbd> 关闭</span></span>
+            <span class="coarse-only">继续输入可以筛选，比如「/表」</span>
+        </div>
+    </div>
+
+    <!-- Formatting toolbar over selected text (live mode) -->
+    <div class="popover float-bar" id="inlineToolbar" role="toolbar" aria-label="文字格式" hidden>
+        <button type="button" class="tb" tabindex="-1" data-command="bold" aria-label="加粗" aria-pressed="false" aria-keyshortcuts="Control+B" data-keys="Ctrl B"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/></svg></button>
+        <button type="button" class="tb" tabindex="-1" data-command="italic" aria-label="斜体" aria-pressed="false" aria-keyshortcuts="Control+I" data-keys="Ctrl I"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 4h-9"/><path d="M14 20H5"/><path d="M15 4 9 20"/></svg></button>
+        <button type="button" class="tb" tabindex="-1" data-command="strike" aria-label="删除线" aria-pressed="false"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4H9a3 3 0 0 0-2.83 4"/><path d="M14 12a4 4 0 0 1 0 8H6"/><path d="M4 12h16"/></svg></button>
+        <button type="button" class="tb" tabindex="-1" data-command="highlight" aria-label="高亮" aria-pressed="false"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></button>
+        <button type="button" class="tb" tabindex="-1" data-command="inline-code" aria-label="行内代码" aria-pressed="false"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></svg></button>
+        <button type="button" class="tb" tabindex="-1" data-command="inline-math" aria-label="行内公式" aria-pressed="false"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 7V5a1 1 0 0 0-1-1H6.5a.5.5 0 0 0-.4.8l4.5 6a2 2 0 0 1 0 2.4l-4.5 6a.5.5 0 0 0 .4.8H17a1 1 0 0 0 1-1v-2"/></svg></button>
+        <button type="button" class="tb" tabindex="-1" data-command="link" aria-label="链接" aria-haspopup="dialog" aria-expanded="false" aria-keyshortcuts="Control+K" data-keys="Ctrl K"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></button>
+        <button type="button" class="tb" tabindex="-1" data-command="clear-format" aria-label="清除格式"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg></button>
+    </div>
+    <div class="float-tip" id="floatTip" aria-hidden="true" hidden></div>
+
     <input type="file" id="fileInput" accept=".md,.markdown,.mdown,.txt,text/markdown,text/plain" hidden>
 
     <!-- App scripts -->
@@ -261,6 +301,7 @@
     <script src="assets/js/live.js"></script>
     <script src="assets/js/commands.js"></script>
     <script src="assets/js/popover.js"></script>
+    <script src="assets/js/live-tools.js"></script>
     <script src="assets/js/app.js"></script>
 </body>
 </html>
