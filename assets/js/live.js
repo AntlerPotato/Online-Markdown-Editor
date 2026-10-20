@@ -22,9 +22,13 @@
     const USES_DEFS = new Set(['paragraph', 'heading', 'quote', 'list', 'table', 'image', 'toc']);
     const MONO_KINDS = new Set(['code', 'fence', 'math', 'html', 'def', 'hr']);
     const PLAIN_ENTER_KINDS = new Set(['code', 'fence', 'math', 'html', 'def', 'table']);
-    // Toolbar commands that rewrite whole lines, and ones that insert a block
-    const LINE_COMMANDS = new Set(['heading', 'quote', 'ul', 'ol', 'task']);
+    // Toolbar commands that rewrite whole lines, list commands, and ones
+    // that insert a block
+    const LINE_COMMANDS = new Set(['heading', 'quote']);
+    const LIST_COMMANDS = new Set(['ul', 'ol', 'task']);
     const BLOCK_COMMANDS = new Set(['table', 'code', 'math', 'toc', 'hr']);
+    // Lines inside a table cell
+    const CELL_BREAK = /[ \t]*<br\s*\/?>[ \t]*/i;
 
     const IMAGE_ONLY = /^(?:[ \t]*!\[[^\]\n]*\]\([^)\n]*\)[ \t]*(?:\n|$))+$/;
     const TOC_LINE = /^[ \t]*\[TOC\][ \t]*$/m;
@@ -1202,6 +1206,37 @@
             else if (key === 'ArrowDown') goToGap(text.length, blocks.length);
         }
 
+        // A list command in a cell: the markers go in front of each line of
+        // the cell (lines split by <br>), as text; an empty cell gets
+        // placeholder text, selected
+        function cellList(b, kind) {
+            const ui = b.ui;
+            const old = ui.text;
+            const parts = old.split(CELL_BREAK);
+            const { lines, on, placeholder } = MDE.toggleListLines(parts, kind);
+            const blank = parts.length === 1 && !old.trim() && on;
+            const value = lines.join('<br>') + (blank ? placeholder : '');
+            const cell = ui.parsed.rows[ui.cell.r].cells[ui.cell.c];
+            // An empty cell gets one space on each side, as when typing in it
+            const [from, to, pad] = !old && cell.end > cell.start
+                ? [b.start + cell.start, b.start + cell.end, ' ']
+                : [ui.base, ui.base + old.length, ''];
+            const base = from + pad.length;
+            const sel = editor.getSelection();
+            let start = base;
+            let end = base + value.length;
+            if (blank) {
+                start = end - placeholder.length;
+            } else if (parts.length === 1) {
+                const shift = (pos) => clamp(pos + value.length - old.length, base, base + value.length);
+                start = shift(sel.start);
+                end = shift(sel.end);
+            }
+            editing = true;
+            structural = true;
+            editor.replaceRange(from, to, pad + value + pad, start, end);
+        }
+
         // The table toolbar: align the caret's column, add a row below or a
         // column to the right of its cell, or delete the table
         function tableCommand(name) {
@@ -2233,8 +2268,9 @@
             // Before a toolbar command: the command works on the document's
             // selection, so an empty line opened with Enter is made real
             // first. In a table cell, commands that work on whole lines
-            // would break the table: they do nothing (false), and new
-            // blocks go under the table.
+            // would break the table: headings and quotes do nothing, lists
+            // put their markers in the cell (both answer false: the command
+            // is done), and new blocks go under the table.
             beforeCommand(name) {
                 if (!visible) return true;
                 editing = true;
@@ -2242,7 +2278,8 @@
                 captureSelection();
                 const b = active;
                 if (b && b.mode === 'table') {
-                    if (LINE_COMMANDS.has(name)) return false;
+                    if (LIST_COMMANDS.has(name) && b.ui.cell) cellList(b, name);
+                    if (LINE_COMMANDS.has(name) || LIST_COMMANDS.has(name)) return false;
                     if (BLOCK_COMMANDS.has(name)) editor.select(b.end, b.end);
                 }
                 if (b && b.gap) {

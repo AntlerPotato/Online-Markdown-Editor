@@ -24,6 +24,24 @@
 
     const lineStartOf = (value, pos) => (pos <= 0 ? 0 : value.lastIndexOf('\n', pos - 1) + 1);
 
+    // A kind of list on some lines: added to all of them (replacing another
+    // kind), or taken off when they all have it already. Also used for the
+    // lines of a table cell in live mode.
+    MDE.toggleListLines = function (lines, kind) {
+        const spec = LISTS[kind];
+        const filled = lines.filter((line) => line.trim());
+        const allOn = filled.length > 0 && filled.every((line) => spec.test.test(line));
+        let n = 0;
+        const out = lines.map((line) => {
+            if (!line.trim() && lines.length > 1) return line;
+            const m = LIST_PREFIX.exec(line);
+            const indent = m ? m[1] : line.match(/^\s*/)[0];
+            const body = m ? line.slice(m[0].length) : line.slice(indent.length);
+            return allOn ? indent + body : indent + spec.prefix(n++) + body;
+        });
+        return { lines: out, on: !allOn, placeholder: spec.placeholder };
+    };
+
     MDE.createCommands = function (editor) {
         // --- Inline wraps ---------------------------------------------------
 
@@ -166,19 +184,9 @@
         }
 
         function toggleList(kind) {
-            const spec = LISTS[kind];
             const block = lineBlock();
-            const filled = block.lines.filter((line) => line.trim());
-            const allOn = filled.length > 0 && filled.every((line) => spec.test.test(line));
-            let n = 0;
-            const out = block.lines.map((line) => {
-                if (!line.trim() && block.lines.length > 1) return line;
-                const m = LIST_PREFIX.exec(line);
-                const indent = m ? m[1] : line.match(/^\s*/)[0];
-                const body = m ? line.slice(m[0].length) : line.slice(indent.length);
-                return allOn ? indent + body : indent + spec.prefix(n++) + body;
-            });
-            applyLines(block, out, allOn ? '' : spec.placeholder);
+            const { lines, on, placeholder } = MDE.toggleListLines(block.lines, kind);
+            applyLines(block, lines, on ? placeholder : '');
         }
 
         function toggleQuote() {
