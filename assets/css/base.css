@@ -137,18 +137,18 @@ svg {
     gap: 2px;
     padding: 3px;
     background: var(--segment-bg);
-    border-radius: 11px;
+    border-radius: var(--radius);
 }
 
 .segmented > button {
-    height: 28px;
+    height: 30px;
     padding: 0 12px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
     border: 0;
-    border-radius: var(--radius-sm);
+    border-radius: 9px;
     background: transparent;
     color: var(--muted);
     font-size: 13px;
@@ -169,7 +169,7 @@ svg {
 
 /* Icon-only segments (view mode) */
 .segmented-icon > button {
-    width: 30px;
+    width: 34px;
     padding: 0;
 }
 

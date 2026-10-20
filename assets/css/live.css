@@ -9,7 +9,7 @@
 }
 
 .live-doc {
-    max-width: 760px;
+    max-width: var(--doc-width);
     padding: 40px 56px 140px 72px;
 }
 

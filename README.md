@@ -17,9 +17,9 @@ A lightweight Markdown editor that runs entirely in the browser. Write in live m
 
 **Source editing**
 - Editor with line numbers, Markdown syntax highlighting and current-line highlight
-- A single top bar: the logo opens the file menu (new, import), followed by the formatting tools, the save state, view modes, theme and export
+- A two-row top bar: the logo opens the file menu (new, import, export), then the outline switch and the document's name, the command palette, the save state, view modes, typography settings, theme and export; the formatting tools are on the second row
 - Formatting tools: undo/redo, paragraph style (H1–H6), bold, italic, strikethrough, highlight, links, images, tables, code blocks, formulas, quotes, lists, task lists, table of contents, horizontal rules
-- On narrow windows the trailing tool groups move into a **⋯** (more) menu, and on phones the toolbar gets a row of its own
+- On narrow windows the trailing tool groups move into a **⋯** (more) menu
 - Table picker (up to 6 × 8, with column alignment) and a link/image dialog
 - Toolbar and menus are fully usable from the keyboard
 
@@ -30,8 +30,11 @@ A lightweight Markdown editor that runs entirely in the browser. Write in live m
 
 **Workspace**
 - Live, source, split and preview views, with a draggable divider in the split view
+- An outline of the document's headings beside it, marking the section being edited (or read); click a heading to go to it
+- A command palette (`Ctrl+Shift+P`) with every command, found by its Chinese or English name or by pinyin
+- Typography settings: page width (presets, a slider, or drag the page's edges), Latin, Chinese and code fonts, and line spacing. A font is downloaded only once chosen; the settings are kept in the browser
 - Light and dark themes; the status bar holds the block type (in live mode), the caret position, word and line count, reading time, the typewriter, focus and sync-scroll switches and the font size
-- Autosave in the browser, plus import and export of `.md` files. The save indicator next to the view switch shows the file name on hover and stays expanded if saving fails
+- Autosave in the browser, plus import and export of `.md` files. The save indicator next to the view switch names its state in its tooltip and stays expanded if saving fails
 
 ## Markdown extras
 
@@ -54,6 +57,7 @@ Standard GitHub-flavoured Markdown (tables, fenced code, strikethrough, autolink
 | Insert link | `Ctrl+K` | `⌘K` |
 | Undo | `Ctrl+Z` | `⌘Z` |
 | Redo | `Ctrl+Y` or `Ctrl+Shift+Z` | `⌘⇧Z` |
+| Command palette | `Ctrl+Shift+P` | `⌘⇧P` |
 
 ## Getting started
 

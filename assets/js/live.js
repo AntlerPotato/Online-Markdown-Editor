@@ -189,6 +189,16 @@
         return { list: mergeMath(list, markdown.mathSpans(text)), links: tokens.links || {} };
     }
 
+    // The document's headings, for the outline: the level, where the
+    // heading starts and where its first line ends, and its token (a line
+    // inside a formula is never a heading)
+    MDE.headingsOf = function (text) {
+        return split(text).list.filter((item) => item.token && item.token.type === 'heading').map((item) => {
+            const lineEnd = text.indexOf('\n', item.start);
+            return { level: item.token.depth, start: item.start, end: lineEnd === -1 || lineEnd > item.end ? item.end : lineEnd, token: item.token };
+        });
+    };
+
     function isMathBlock(source) {
         const s = source.trim();
         return s.length > 4 && s.startsWith('$$') && s.endsWith('$$') && s.includes('\n') && !s.slice(2, -2).includes('$$');
@@ -2347,6 +2357,12 @@
                 editing = true;
                 flush();
                 placeCaret();
+            },
+
+            // Take the selection in the text into the document now, before
+            // focus moves elsewhere (into the command palette)
+            captureSelection() {
+                if (visible) captureSelection();
             },
 
             // Before a toolbar command: the command works on the document's
