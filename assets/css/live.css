@@ -230,25 +230,42 @@
     box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
+/* The language chip: opens the language menu (live-tools.js) */
 .lv-lang {
-    width: 12em;
     max-width: 50%;
-    height: 26px;
-    padding: 0 10px;
+    height: 30px;
+    margin-left: -10px;
+    padding: 0 6px 0 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     border: 1px solid var(--border-strong);
-    border-radius: 7px;
+    border-radius: var(--radius-sm);
     background: var(--surface);
     font-family: var(--font-mono);
     font-size: 12.5px;
+    line-height: 1;
     color: var(--text-control);
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.lv-lang::placeholder {
-    color: var(--faint);
+.lv-lang-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.lv-lang:focus,
+.lv-lang svg {
+    flex: none;
+    color: var(--muted);
+}
+
+.lv-lang:hover {
+    border-color: var(--accent);
+}
+
+.lv-lang[aria-expanded="true"],
 .lv-lang:focus-visible {
     outline: none;
     border-color: var(--accent);
