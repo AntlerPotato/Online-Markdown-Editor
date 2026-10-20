@@ -789,7 +789,8 @@
     function run(name, el) {
         const action = actions[name];
         if (!action) return;
-        // In live mode a command can be refused (whole-line formats in a table cell)
+        // In a live-mode table cell a command can be refused (headings,
+        // quotes) or done by live.js itself (lists)
         if (state.view === 'live' && EDIT_COMMANDS.has(name) && !live.beforeCommand(name)) return;
         action(el || {});
     }
