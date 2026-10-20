@@ -10,13 +10,16 @@
     overflow-x: hidden;
 }
 
+/* Width, fonts and line spacing come from the typography settings; code
+   (here, and in the source editor) uses the chosen code font */
 .markdown-preview {
-    max-width: 720px;
+    --font-mono: var(--font-code);
+    max-width: var(--preview-width);
     margin: 0 auto;
     padding: 28px 44px 56px;
-    font-family: var(--font-ui);
+    font-family: var(--font-doc);
     font-size: var(--preview-font-size);
-    line-height: 1.85;
+    line-height: var(--doc-line-height);
     color: var(--text-body);
     overflow-wrap: break-word;
 }

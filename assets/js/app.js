@@ -21,12 +21,20 @@
     const inlineToolbar = $('inlineToolbar');
     const saveStatus = $('saveStatus');
     const docTitle = $('docTitle');
+    const headerBar = $('headerBar');
+    const headerTools = $('headerTools');
+    const sidebar = $('sidebar');
+    const settingsPanel = $('settingsPanel');
+    const settingsButton = $('settingsButton');
+    const widthGuides = $('widthGuides');
+    const paletteButton = $('paletteButton');
     const viewToggle = $('viewToggle');
     const phoneMenu = $('phoneMenu');
     const quickBar = $('quickBar');
     const quickSlashButton = quickBar.querySelector('[data-command="slash"]');
 
-    // Phones (as in layout.css) and touch screens
+    // Narrow windows (no outline), phones (as in layout.css) and touch screens
+    const NARROW = window.matchMedia('(max-width: 860px)');
     const PHONE = window.matchMedia('(max-width: 640px)');
     const COARSE = window.matchMedia('(pointer: coarse)');
 
@@ -46,7 +54,9 @@
         typewriter: store.get('typewriter', false) === true,
         fontSize: clamp(Number(store.get('fontSize', 14)) || 14, FONT_MIN, FONT_MAX),
         split: clamp(Number(store.get('split', 50)) || 50, 20, 80),
+        sidebar: store.get('sidebar', true) !== false,
         fileName: DEFAULT_NAME,
+        caret: { line: 0, col: 0 },
         headingLines: [],
         previewDirty: true,
         ready: false
@@ -141,6 +151,7 @@
         updateHistoryButtons();
         scheduleStats();
         schedulePreview();
+        scheduleOutline();
         live.update();
         if (state.ready) scheduleSave();
     }
@@ -163,8 +174,16 @@
     }
 
     function handleCaret({ line, col }) {
-        $('statusCaret').textContent = `第 ${line + 1} 行，第 ${col + 1} 列`;
+        state.caret = { line, col };
+        showCaret();
         updateFormatState();
+        markOutline();
+    }
+
+    // Live mode names the line only (the column is one of the source)
+    function showCaret() {
+        const { line, col } = state.caret;
+        $('statusCaret').textContent = state.view === 'live' ? `第 ${line + 1} 行` : `第 ${line + 1} 行，第 ${col + 1} 列`;
     }
 
     // Live mode also names the kind of block the caret is in
@@ -266,6 +285,7 @@
         tocFrame = requestAnimationFrame(() => {
             tocFrame = 0;
             updateActiveHeading();
+            markOutline();
         });
     }
 
@@ -448,6 +468,8 @@
         updateQuickBar();
         // On phones the toolbar shows in some views only
         fitToolbar();
+        showCaret();
+        placeGuides();
 
         // Live mode edits through the (hidden) source editor
         if (mode === 'live') {
@@ -462,6 +484,7 @@
 
         if (mode !== 'edit' && state.previewDirty) renderPreview();
         else syncScroll('editor');
+        markOutline();
     }
 
     function setSync(on) {
@@ -568,17 +591,18 @@
     // Under the file name on phones
     const PHONE_SAVE_LABELS = { saved: '已保存在本机浏览器', pending: '正在保存…', error: '无法保存在本机浏览器' };
 
-    // The save indicator is icon-only until hovered, so its name carries the details
+    // The save indicator is an icon (unless saving failed), so its name
+    // and tooltip carry the details
     function updateSaveButton() {
-        $('saveButton').setAttribute('aria-label', `${state.fileName}，${SAVE_LABELS[saveStatus.dataset.state]}`);
+        const label = `${SAVE_LABELS[saveStatus.dataset.state]}：${state.fileName}`;
+        $('saveButton').setAttribute('aria-label', label);
+        $('saveButton').title = label;
     }
 
     function setFileName(name) {
         state.fileName = name || DEFAULT_NAME;
-        const label = $('fileName');
-        label.textContent = state.fileName;
-        label.title = state.fileName;
         $('docName').textContent = state.fileName;
+        docTitle.title = state.fileName;
         updateSaveButton();
     }
 
@@ -834,6 +858,409 @@
     }
 
     // ========================================================================
+    // Outline
+    // Headings of the document beside it; the section being edited (or, with
+    // nothing being edited, the one at the top of the view) is marked.
+    // ========================================================================
+
+    const TOP_HEADINGS = ':scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6';
+    const outline = MDE.createOutline({ nav: $('outline'), empty: $('outlineEmpty'), onPick: goToHeading });
+    let outlineText = null;     // the text the outline was made from
+    let outlineTimer = 0;
+
+    const outlineShown = () => state.sidebar && !NARROW.matches;
+
+    function scheduleOutline() {
+        if (!outlineShown()) return;
+        clearTimeout(outlineTimer);
+        outlineTimer = setTimeout(updateOutline, editor.getValue().length > 30000 ? 400 : 150);
+    }
+
+    function updateOutline() {
+        clearTimeout(outlineTimer);
+        if (!outlineShown()) return;
+        const value = editor.getValue();
+        if (value !== outlineText) {
+            outlineText = value;
+            outline.render(MDE.outline.headingsOf(value));
+        }
+        markOutline();
+    }
+
+    function markOutline() {
+        if (!outlineShown() || outlineText === null) return;
+        const byView = state.view === 'preview' || (state.view === 'live' && !live.activeElement());
+        outline.mark(byView ? headingAtTop() : outline.indexAt(editor.getSelection().end));
+    }
+
+    // The last heading above the top of the view (the first one at the top
+    // of the document, the last one at its end)
+    function headingAtTop() {
+        const inLive = state.view === 'live';
+        const scroller = inLive ? liveScroll : previewScroll;
+        const headings = (inLive ? liveDoc : preview).querySelectorAll(inLive ? ':scope > .lv-k-heading' : TOP_HEADINGS);
+        if (!headings.length) return -1;
+        if (scroller.scrollTop >= scroller.scrollHeight - scroller.clientHeight - 2) return headings.length - 1;
+        const line = scroller.getBoundingClientRect().top + 48;
+        let lo = 0;
+        let hi = headings.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (headings[mid].getBoundingClientRect().top <= line) lo = mid + 1;
+            else hi = mid;
+        }
+        return Math.max(0, lo - 1);
+    }
+
+    // To a heading: in live mode and the source editor, the caret goes to
+    // the end of its line, with the heading near the top; the preview
+    // scrolls to it
+    function goToHeading(item, index) {
+        if (state.view === 'preview') {
+            const heading = preview.querySelectorAll(TOP_HEADINGS)[index];
+            if (heading) previewScroll.scrollTo({ top: contentTop(heading) - 16, behavior: 'smooth' });
+            return;
+        }
+        editor.select(item.end, item.end);
+        if (state.view === 'live') {
+            live.focus();
+            const el = live.activeElement();
+            if (el) liveScroll.scrollTop += el.getBoundingClientRect().top - liveScroll.getBoundingClientRect().top - 24;
+        } else {
+            editor.focus();
+            const line = editor.getValue().slice(0, item.start).split('\n').length - 1;
+            textarea.scrollTop = Math.max(0, editor.lineTop(line) - 16);
+        }
+        outline.mark(index);
+    }
+
+    function setSidebar(on, persist = true) {
+        state.sidebar = on;
+        if (persist) store.set('sidebar', on);
+        sidebar.hidden = !on;
+        setChecked('[data-command="toggle-sidebar"]', on);
+        // (at start-up the document isn't there yet: made once it is)
+        if (on && state.ready) updateOutline();
+        relayout();
+    }
+
+    // The document moved or changed size (the outline, the page width, a
+    // font arrived): the things placed on it follow
+    let relayoutFrame = 0;
+
+    function relayout() {
+        if (relayoutFrame) return;
+        relayoutFrame = requestAnimationFrame(() => {
+            relayoutFrame = 0;
+            if (state.view === 'live') {
+                liveBlocks.refresh();
+                liveTools.selection();
+            }
+            popover.update();
+            placeGuides();
+        });
+    }
+
+    // ========================================================================
+    // Typography settings
+    // Page width, fonts and line spacing of the document (typography.js
+    // keeps them). The panel isn't modal: it stays open while the page is
+    // edited, and the page's edges get handles to drag.
+    // ========================================================================
+
+    const typography = MDE.typography;
+    const widthRange = $('widthRange');
+    const fontLists = { en: $('fontsEn'), zh: $('fontsZh'), mono: $('fontsMono') };
+
+    function settingButton(className, kind, value, label) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        if (className) button.className = className;
+        button.dataset.setting = kind;
+        button.dataset.value = String(value);
+        button.setAttribute('aria-pressed', 'false');
+        button.textContent = label;
+        return button;
+    }
+
+    $('widthPresets').replaceChildren(...typography.WIDTHS.map((w) => settingButton('', 'width', w.value, w.label)));
+    $('lineHeights').replaceChildren(...typography.LINE_HEIGHTS.map((h) => settingButton('', 'lh', h.value, h.label)));
+    Object.keys(fontLists).forEach((kind) => {
+        fontLists[kind].replaceChildren(...typography.FONTS[kind].map((font) => {
+            const button = settingButton('font-chip', kind, font.key, font.name);
+            // Shown in its own font (once that has been downloaded)
+            button.style.fontFamily = `${font.family}, ${font.generic}`;
+            const note = document.createElement('small');
+            note.textContent = font.note || '';
+            note.hidden = !font.note;
+            button.appendChild(note);
+            return button;
+        }));
+    });
+
+    function showSettings() {
+        const s = typography.get();
+        settingsPanel.querySelectorAll('[data-setting]').forEach((button) => {
+            button.setAttribute('aria-pressed', String(button.dataset.value === String(s[button.dataset.setting])));
+        });
+        $('settingsWidthValue').textContent = typography.widthLabel(s.width);
+        $('settingsLhValue').textContent = String(s.lh);
+        widthRange.value = String(s.width === 'full' ? typography.WIDTH_MAX : s.width);
+        $('widthLabel').textContent = typography.widthLabel(s.width);
+    }
+
+    // A font is downloaded once chosen; its button says so meanwhile
+    function chooseFont(button, kind, key) {
+        const font = typography.FONTS[kind].find((f) => f.key === key);
+        const note = button.querySelector('small');
+        typography.set({ [kind]: key });
+        if (!font.css) return;
+        let done = false;
+        setTimeout(() => {
+            if (done) return;
+            note.textContent = '下载中…';
+            note.hidden = false;
+        }, 150);
+        typography.load(kind, key).then(() => {
+            done = true;
+            note.textContent = font.note || '';
+            note.hidden = !font.note;
+        });
+    }
+
+    settingsPanel.addEventListener('click', (e) => {
+        const button = e.target.closest('[data-setting]');
+        if (!button) return;
+        const kind = button.dataset.setting;
+        const value = button.dataset.value;
+        if (kind === 'width') typography.set({ width: value === 'full' ? 'full' : Number(value) });
+        else if (kind === 'lh') typography.set({ lh: Number(value) });
+        else chooseFont(button, kind, value);
+        showSettings();
+        relayout();
+    });
+
+    widthRange.addEventListener('input', () => {
+        typography.set({ width: Number(widthRange.value) }, false);
+        showSettings();
+        relayout();
+    });
+
+    widthRange.addEventListener('change', () => {
+        typography.set({ width: Number(widthRange.value) });
+    });
+
+    function resetTypography() {
+        typography.reset();
+        showSettings();
+        relayout();
+    }
+
+    function setSettingsOpen(open) {
+        if (settingsPanel.hidden === !open) return;
+        settingsPanel.hidden = !open;
+        settingsButton.setAttribute('aria-expanded', String(open));
+        placeGuides();
+        if (open) {
+            showSettings();
+            // Into the panel: the first setting's current choice
+            const first = Array.from(settingsPanel.querySelectorAll('[aria-pressed="true"]')).find((el) => el.offsetParent !== null);
+            if (first) first.focus({ preventScroll: true });
+        } else if (settingsPanel.contains(document.activeElement)) {
+            (PHONE.matches ? $('phoneMoreButton') : settingsButton).focus();
+        }
+    }
+
+    settingsButton.addEventListener('click', () => setSettingsOpen(settingsPanel.hidden));
+
+    settingsPanel.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape' || e.defaultPrevented) return;
+        e.preventDefault();
+        setSettingsOpen(false);
+    });
+
+    // The page's edges and its width, while the settings are open (in live
+    // mode and the preview, when there is room beside the page). The guides
+    // stand for the live page's width: the preview's page is a little
+    // narrower (less padding), so its guides stand a little outside it.
+    function placeGuides() {
+        const show = !settingsPanel.hidden && !NARROW.matches && (state.view === 'live' || state.view === 'preview');
+        widthGuides.hidden = !show;
+        if (!show) return;
+        const page = (state.view === 'live' ? liveDoc : preview).getBoundingClientRect();
+        const box = panes.getBoundingClientRect();
+        const outside = state.view === 'preview' && typography.get().width !== 'full' ? typography.PREVIEW_PADDING_LESS / 2 : 0;
+        widthGuides.style.left = (page.left - box.left - outside) + 'px';
+        widthGuides.style.width = (page.width + outside * 2) + 'px';
+    }
+
+    // Dragging an edge: the page stays in the middle, so its width is twice
+    // the distance from the middle (in steps of the slider)
+    widthGuides.addEventListener('pointerdown', (e) => {
+        const edge = e.target.closest('.width-edge');
+        if (!edge || e.button !== 0) return;
+        e.preventDefault();
+        edge.setPointerCapture(e.pointerId);
+        document.body.classList.add('is-resizing-width');
+        const guides = widthGuides.getBoundingClientRect();
+        const middle = guides.left + guides.width / 2;
+        const { WIDTH_MIN, WIDTH_MAX, WIDTH_STEP } = typography;
+        let width = null;
+        let frame = 0;
+
+        const move = (ev) => {
+            width = clamp(Math.round((Math.abs(ev.clientX - middle) * 2) / WIDTH_STEP) * WIDTH_STEP, WIDTH_MIN, WIDTH_MAX);
+            if (frame) return;
+            frame = requestAnimationFrame(() => {
+                frame = 0;
+                typography.set({ width }, false);
+                showSettings();
+                placeGuides();
+            });
+        };
+        const end = () => {
+            cancelAnimationFrame(frame);
+            document.body.classList.remove('is-resizing-width');
+            edge.removeEventListener('pointermove', move);
+            edge.removeEventListener('pointerup', end);
+            edge.removeEventListener('pointercancel', end);
+            if (width !== null) typography.set({ width });
+            showSettings();
+            relayout();
+        };
+        edge.addEventListener('pointermove', move);
+        edge.addEventListener('pointerup', end);
+        edge.addEventListener('pointercancel', end);
+    });
+
+    window.addEventListener('resize', placeGuides);
+
+    // ========================================================================
+    // Command palette
+    // ========================================================================
+
+    const iconOf = (selector) => document.querySelector(selector + ' svg');
+    const MOD = IS_MAC ? '⌘' : 'Ctrl';
+    const notPreview = () => state.view !== 'preview';
+    const HEADINGS = [1, 2, 3, 4, 5, 6].map((level) => ({
+        id: 'h' + level,
+        label: `标题 ${level}`,
+        group: '段落',
+        words: `heading h${level} title biaoti bt${level === 1 ? ' yiji' : level === 2 ? ' erji' : ''}`,
+        icon: 'H' + level,
+        keys: [MOD, String(level)],
+        edit: true,
+        when: notPreview,
+        run: () => run('heading', { dataset: { level: String(level) } })
+    }));
+
+    // edit: works on the document (focus goes back to the text first)
+    const COMMANDS = [
+        { id: 'bold', label: '加粗', group: '格式', words: 'bold strong jiacu jc cuti', icon: iconOf('#toolbar [data-command="bold"]'), keys: [MOD, 'B'] },
+        { id: 'italic', label: '斜体', group: '格式', words: 'italic em xieti xt', icon: iconOf('#toolbar [data-command="italic"]'), keys: [MOD, 'I'] },
+        { id: 'strike', label: '删除线', group: '格式', words: 'strikethrough del shanchuxian scx', icon: iconOf('#toolbar [data-command="strike"]') },
+        { id: 'highlight', label: '高亮', group: '格式', words: 'highlight mark gaoliang gl', icon: iconOf('#toolbar [data-command="highlight"]') },
+        { id: 'inline-code', label: '行内代码', group: '格式', words: 'inline code hangneidaima hndm', icon: iconOf('#inlineToolbar [data-command="inline-code"]') },
+        { id: 'inline-math', label: '行内公式', group: '格式', words: 'inline math latex hangneigongshi hngs', icon: iconOf('#inlineToolbar [data-command="inline-math"]') },
+        { id: 'link', label: '链接', group: '格式', words: 'link url lianjie lj', icon: iconOf('#linkButton'), keys: [MOD, 'K'] },
+        { id: 'clear-format', label: '清除格式', group: '格式', words: 'clear format qingchugeshi qcgs', icon: iconOf('#inlineToolbar [data-command="clear-format"]') },
+        { id: 'p', label: '正文', group: '段落', words: 'paragraph body text zhengwen zw', icon: iconOf('#slash-p'), keys: [MOD, '0'], run: () => run('heading', { dataset: { level: '0' } }) },
+        ...HEADINGS,
+        { id: 'quote', label: '引用', group: '段落', words: 'quote blockquote yinyong yy', icon: iconOf('#toolbar [data-command="quote"]') },
+        { id: 'ul', label: '无序列表', group: '段落', words: 'bullet list ul wuxuliebiao wxlb liebiao', icon: iconOf('#toolbar [data-command="ul"]') },
+        { id: 'ol', label: '有序列表', group: '段落', words: 'ordered numbered list ol youxuliebiao yxlb liebiao', icon: iconOf('#toolbar [data-command="ol"]') },
+        { id: 'task', label: '任务列表', group: '段落', words: 'task todo checkbox renwuliebiao rwlb', icon: iconOf('#toolbar [data-command="task"]') },
+        { id: 'image', label: '图片', group: '插入', words: 'image picture img tupian tp', icon: iconOf('#imageButton') },
+        { id: 'table', label: '表格', group: '插入', words: 'table biaoge bg', icon: iconOf('#tableButton') },
+        { id: 'code', label: '代码块', group: '插入', words: 'code block fence daimakuai dmk', icon: iconOf('#toolbar [data-command="code"]') },
+        { id: 'math', label: '公式块', group: '插入', words: 'math formula equation latex gongshikuai gsk gongshi', icon: iconOf('#toolbar [data-command="math"]') },
+        { id: 'toc', label: '目录', group: '插入', words: 'toc contents mulu ml', icon: iconOf('#toolbar [data-command="toc"]') },
+        { id: 'hr', label: '分隔线', group: '插入', words: 'hr rule divider line fengexian fgx', icon: iconOf('#toolbar [data-command="hr"]') },
+        { id: 'undo', label: '撤销', group: '编辑', words: 'undo chexiao cx', icon: iconOf('#toolbar [data-command="undo"]'), keys: [MOD, 'Z'], disabled: () => !editor.canUndo() },
+        { id: 'redo', label: '重做', group: '编辑', words: 'redo chongzuo cz', icon: iconOf('#toolbar [data-command="redo"]'), keys: [MOD, 'Y'], disabled: () => !editor.canRedo() }
+    ].map((c) => ({ edit: true, when: notPreview, run: () => run(c.id), ...c })).concat([
+        ...[['live', '实时', 'live shishi ss'], ['edit', '源码', 'source code markdown yuanma ym'], ['split', '分栏', 'split side fenlan fl'], ['preview', '预览', 'preview read yulan yl']].map(([mode, label, words]) => ({
+            id: 'view-' + mode,
+            label,
+            group: '视图',
+            words: 'view shitu ' + words,
+            icon: iconOf(`.header-actions [data-mode="${mode}"]`),
+            radio: true,
+            checked: () => state.view === mode,
+            run: () => setView(mode)
+        })),
+        { id: 'sidebar', label: '大纲', group: '视图', words: 'outline sidebar headings dagang dg cebianlan', icon: iconOf('#sidebarToggle'), checked: () => state.sidebar, when: () => !NARROW.matches, run: () => setSidebar(!state.sidebar) },
+        { id: 'theme', label: '深色模式', group: '视图', words: 'dark theme night shensemoshi ssms zhuti', icon: iconOf('.theme-toggle'), checked: () => currentTheme() === 'dark', run: () => run('toggle-theme') },
+        { id: 'typewriter', label: '打字机', group: '视图', words: 'typewriter dazijimoshi dzj', icon: iconOf('#phoneMenu [data-command="toggle-typewriter"]'), checked: () => state.typewriter, when: () => state.view === 'live', run: () => run('toggle-typewriter') },
+        { id: 'focus', label: '专注', group: '视图', words: 'focus zhuanzhu zz', icon: iconOf('#phoneMenu [data-command="toggle-focus"]'), checked: () => state.focusMode, when: () => state.view === 'live', run: () => run('toggle-focus') },
+        { id: 'sync', label: '同步滚动', group: '视图', words: 'sync scroll tongbugundong tbgd', icon: iconOf('#phoneMenu [data-command="toggle-sync"]'), checked: () => state.sync, when: () => state.view === 'split', run: () => run('toggle-sync') },
+        { id: 'settings', label: '排版设置', group: '视图', words: 'typography settings font width line spacing paibanshezhi pbsz ziti kuandu hangju', icon: iconOf('#settingsButton'), run: () => setSettingsOpen(true) },
+        { id: 'font-inc', label: '放大字号', group: '视图', words: 'font size bigger larger zoom in fangdazihao fdzh zihao', icon: '+', disabled: () => state.fontSize >= FONT_MAX, run: () => run('font-inc') },
+        { id: 'font-dec', label: '缩小字号', group: '视图', words: 'font size smaller zoom out suoxiaozihao sxzh zihao', icon: '−', disabled: () => state.fontSize <= FONT_MIN, run: () => run('font-dec') },
+        { id: 'new', label: '新建文档', group: '文件', words: 'new document file xinjian xj', icon: iconOf('#fileMenu [data-command="new"]'), run: () => run('new') },
+        { id: 'import', label: '导入 Markdown 文件', group: '文件', words: 'import open file daoru dr', icon: iconOf('#fileMenu [data-command="import"]'), run: () => run('import') },
+        { id: 'export', label: '导出 Markdown 文件', group: '文件', words: 'export download save file daochu dc', icon: iconOf('#fileMenu [data-command="export"]'), run: () => run('export') }
+    ]);
+
+    // Where focus was when the palette opened: the block being edited, the
+    // source editor, or an element
+    let paletteFrom = null;
+
+    function focusBack(intoText) {
+        const from = paletteFrom;
+        paletteFrom = null;
+        if (from === 'live') live.focus();
+        else if (from === 'editor') editor.focus();
+        else if (intoText) focusEditor();
+        else if (from && from.isConnected && from.offsetParent !== null) from.focus();
+    }
+
+    const palette = MDE.createPalette({
+        panel: $('commandPalette'),
+        input: $('paletteSearch'),
+        list: $('paletteList'),
+        button: paletteButton,
+        commands: COMMANDS,
+        // Under the top bar's first row, in the middle of the window
+        place(panel) {
+            const view = popover.viewport();
+            const top = Math.max(view.top + 8, headerBar.getBoundingClientRect().bottom + 6);
+            palette.fit(view.bottom - top - 16 - (panel.offsetHeight - $('paletteList').offsetHeight));
+            panel.style.left = Math.max(8, (document.documentElement.clientWidth - panel.offsetWidth) / 2) + 'px';
+            panel.style.top = top + 'px';
+        },
+        returnFocus: () => focusBack(false),
+        onRun(command) {
+            focusBack(!!command.edit);
+            command.run();
+        }
+    });
+
+    function openPalette() {
+        if (palette.isOpen()) {
+            popover.close(true);
+            return;
+        }
+        const el = document.activeElement;
+        paletteFrom = state.view === 'live' && live.activeElement() && liveDoc.contains(el) ? 'live'
+            : el === textarea ? 'editor'
+            : el && el !== document.body ? el : null;
+        // A selection made a moment ago is only read on the next frame
+        if (paletteFrom === 'live') live.captureSelection();
+        palette.open();
+    }
+
+    paletteButton.addEventListener('click', openPalette);
+
+    // Ctrl+Shift+P (⌘⇧P) anywhere, before the text editors see it
+    document.addEventListener('keydown', (e) => {
+        if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.altKey || e.isComposing || e.key.toLowerCase() !== 'p') return;
+        e.preventDefault();
+        e.stopPropagation();
+        openPalette();
+    }, true);
+
+    // ========================================================================
     // Commands (toolbar, menus, shortcuts)
     // ========================================================================
 
@@ -867,6 +1294,10 @@
         'view-toggle': () => setView(state.view === 'live' ? 'edit' : 'live'),
         slash: quickSlash,
         'hide-keyboard': () => live.stopEditing(true),
+        'toggle-sidebar': () => setSidebar(!state.sidebar),
+        'toggle-settings': () => setSettingsOpen(settingsPanel.hidden),
+        'open-settings': () => setSettingsOpen(true),
+        'reset-typography': resetTypography,
         'toggle-sync': () => setSync(!state.sync),
         'toggle-focus': () => setFocusMode(!state.focusMode),
         'toggle-typewriter': () => setTypewriter(!state.typewriter),
@@ -985,12 +1416,11 @@
 
     // ========================================================================
     // Toolbar overflow
-    // When the top bar runs out of room, the trailing groups of tools
+    // When the toolbar's row runs out of room, the trailing groups of tools
     // (marked data-group) move into the "more" menu, last group first. If
-    // that is still not enough, the toolbar moves to a row of its own.
+    // that is still not enough, the toolbar scrolls.
     // ========================================================================
 
-    const header = $('appHeader');
     const OVERFLOW_GROUPS = ['insert', 'list', 'block'];
 
     function setOverflow(count) {
@@ -1012,23 +1442,15 @@
     }
 
     function fitToolbar() {
-        header.classList.remove('is-stacked');
         collapseToFit();
-        if (toolbarOverflows()) {
-            // On its own row; if even that is too narrow, the toolbar scrolls
-            header.classList.add('is-stacked');
-            collapseToFit();
-        }
-
         const open = popover.current();
         if (open && open.panel === moreMenu && moreButton.hidden) popover.close(false);
         const visible = visibleToolbarButtons();
         if (!visible.some((el) => el.tabIndex === 0)) setToolbarTabStop(visible[0]);
     }
 
-    // The header itself isn't observed: stacking changes its height
     window.addEventListener('resize', fitToolbar);
-    if ('ResizeObserver' in window) new ResizeObserver(fitToolbar).observe($('headerActions'));
+    if ('ResizeObserver' in window) new ResizeObserver(fitToolbar).observe(headerTools);
 
     // ========================================================================
     // Phones: "more", the quick bar and the on-screen keyboard
@@ -1102,9 +1524,17 @@
         }
     });
 
+    // Wide enough again for the outline (and the page's width handles)
+    if (NARROW.addEventListener) {
+        NARROW.addEventListener('change', () => {
+            updateOutline();
+            placeGuides();
+        });
+    }
+
     if (IS_MAC) {
         document.querySelectorAll('.menu-kbd').forEach((el) => { el.textContent = el.textContent.replace('Ctrl+', '⌘'); });
-        document.querySelectorAll('.kbd').forEach((el) => { if (el.textContent === 'Ctrl') el.textContent = '⌘'; });
+        document.querySelectorAll('.kbd').forEach((el) => { el.textContent = el.textContent.replace(/^Ctrl(?= |$)/, '⌘'); });
         document.querySelectorAll('[data-keys]').forEach((el) => { el.dataset.keys = el.dataset.keys.replace('Ctrl ', '⌘'); });
         document.querySelectorAll('[aria-keyshortcuts]').forEach((el) => {
             el.setAttribute('aria-keyshortcuts', el.getAttribute('aria-keyshortcuts').replace('Control+', 'Meta+'));
@@ -1124,6 +1554,7 @@
     setTypewriter(state.typewriter);
     setFontSize(state.fontSize);
     setSplit(state.split, false);
+    setSidebar(state.sidebar, false);
 
     const saved = store.get('doc', null);
     if (saved && typeof saved.content === 'string') {
@@ -1135,6 +1566,7 @@
 
     setView(state.view);
     state.ready = true;
+    updateOutline();
 
     // highlight.js and KaTeX load on first use; render again once they arrive
     MDE.loader.onLoad(() => {
@@ -1143,12 +1575,19 @@
         live.refreshLibraries();
     });
 
-    // Web fonts change text metrics once they arrive
+    // Web fonts change text metrics once they arrive (and later, when a
+    // font chosen in the typography settings does)
     if (document.fonts && document.fonts.ready) {
         document.fonts.ready.then(() => {
             editor.refreshLayout();
             fitToolbar();
             syncScroll('editor');
         });
+        if (document.fonts.addEventListener) {
+            document.fonts.addEventListener('loadingdone', () => {
+                editor.refreshLayout();
+                relayout();
+            });
+        }
     }
 })(window.MDE = window.MDE || {});

@@ -1,6 +1,8 @@
 /* ==========================================================================
-   App shell: sky stage, top bar (logo, formatting toolbar, save state and
-   actions), document card, panes, splitter and status bar
+   App shell: sky stage, document card with its top bar (file menu,
+   outline switch, the document's tab, commands, save state, views,
+   settings; the formatting toolbar under them), typography settings,
+   outline, panes, splitter and status bar
    ========================================================================== */
 
 .app {
@@ -17,11 +19,10 @@
     position: relative;
     flex: 1;
     min-height: 0;
-    margin: 10px;
-    padding: 10px;
+    margin: 8px;
+    padding: 8px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
     overflow: hidden;
     border-radius: var(--radius-stage);
     background: var(--sky);
@@ -75,22 +76,34 @@
 }
 
 /* --- Top bar ------------------------------------------------------------- */
+/* Two rows at the top of the card: the bar, and the formatting tools */
 
 .app-header {
     position: relative;
     z-index: 5;
     flex: none;
-    min-height: 52px;
+    display: flex;
+    flex-direction: column;
+}
+
+.header-bar {
+    height: 52px;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     padding: 0 8px 0 6px;
-    background: var(--toolbar-bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-toolbar);
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
+    background: var(--surface-sunken);
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.header-tools {
+    height: 46px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border-soft);
 }
 
 /* Logo: opens the file menu */
@@ -141,8 +154,48 @@
     width: 1px;
     height: 22px;
     flex: none;
-    margin: 0 6px;
+    margin: 0 4px;
     background: var(--border);
+}
+
+.tb.sidebar-toggle {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+}
+
+/* The document's tab: its file name (on phones, its name and save state) */
+.doc-title {
+    min-width: 0;
+    height: 30px;
+    flex: 0 1 auto;
+    padding: 0 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--surface);
+    box-shadow: var(--shadow-segment);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.doc-icon {
+    color: var(--muted);
+}
+
+.doc-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.doc-save {
+    display: none;
 }
 
 /* --- Formatting toolbar -------------------------------------------------- */
@@ -169,8 +222,8 @@
 }
 
 .tb {
-    width: 36px;
-    height: 36px;
+    width: 34px;
+    height: 34px;
     padding: 0;
     display: inline-grid;
     place-items: center;
@@ -198,7 +251,7 @@
 
 .tb-wide {
     width: auto;
-    min-width: 76px;
+    min-width: 92px;
     padding: 0 6px 0 10px;
     display: inline-flex;
     align-items: center;
@@ -220,27 +273,6 @@
     background: var(--border);
 }
 
-/* Too narrow for one row (set by app.js): logo and actions on top, the
-   toolbar underneath */
-.app-header.is-stacked {
-    flex-wrap: wrap;
-    row-gap: 2px;
-    padding: 5px 6px;
-}
-
-.is-stacked .header-sep {
-    display: none;
-}
-
-.is-stacked .toolbar {
-    order: 1;
-    flex: 1 1 100%;
-}
-
-.is-stacked .header-actions {
-    padding-left: 0;
-}
-
 /* --- Top bar actions ----------------------------------------------------- */
 
 .header-actions {
@@ -248,8 +280,18 @@
     flex: none;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     padding-left: 8px;
+}
+
+.header-actions .icon-btn {
+    width: 34px;
+    height: 34px;
+}
+
+.icon-btn[aria-expanded="true"] {
+    background: var(--pressed);
+    color: var(--text);
 }
 
 .theme-toggle .icon-sun {
@@ -265,20 +307,21 @@
 }
 
 .btn-export {
+    height: 34px;
     padding: 0 14px 0 12px;
-    border-radius: 11px;
 }
 
-/* Save state: an icon that grows leftwards into a pill on hover or focus,
-   without moving anything else in the bar */
-.save-status {
+/* Commands and save state: round icons. The command palette's grows
+   leftwards into a pill on hover or focus, without moving anything else
+   in the bar; the save state shows its label only for an error. */
+.pill-slot {
     position: relative;
     width: 32px;
     height: 32px;
     flex: none;
 }
 
-.save-pill {
+.header-pill {
     position: absolute;
     top: 0;
     right: 0;
@@ -299,39 +342,35 @@
     transition: padding 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.save-pill:hover,
-.save-pill:focus-visible {
-    padding: 0 12px;
-    background: var(--surface);
-    border-color: var(--border-strong);
-    box-shadow: var(--shadow-pill);
-}
-
-.save-detail {
+.pill-detail {
     display: none;
     align-items: center;
     gap: 8px;
 }
 
-.save-pill:hover .save-detail,
-.save-pill:focus-visible .save-detail,
-.save-status[data-state="error"] .save-detail {
-    display: flex;
-}
-
-.file-name {
-    max-width: 220px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+/* The command palette's pill: its icon on the left, the keys on the right */
+.cmd-pill {
     font-weight: 500;
 }
 
-.file-sep {
-    width: 3px;
-    height: 3px;
-    flex: none;
-    border-radius: 50%;
-    background: var(--dot);
+.cmd-pill:hover,
+.cmd-pill:focus-visible,
+.cmd-pill[aria-expanded="true"] {
+    padding: 0 6px 0 12px;
+    background: var(--surface);
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-pill);
+}
+
+.cmd-pill:hover .pill-detail,
+.cmd-pill:focus-visible .pill-detail,
+.cmd-pill[aria-expanded="true"] .pill-detail,
+.save-status[data-state="error"] .pill-detail {
+    display: flex;
+}
+
+.save-pill:hover {
+    background: var(--hover-strong);
 }
 
 .save-label {
@@ -363,7 +402,7 @@
     }
 }
 
-/* Errors stay expanded, take their own room and drop the file name */
+/* Errors stay expanded and take their own room */
 .save-status[data-state="error"] {
     width: auto;
 }
@@ -378,11 +417,6 @@
     font-weight: 500;
 }
 
-.save-status[data-state="error"] .file-name,
-.save-status[data-state="error"] .file-sep {
-    display: none;
-}
-
 .save-status[data-state="error"] .save-label {
     color: inherit;
 }
@@ -391,36 +425,9 @@
     color: var(--danger);
 }
 
-/* --- Phones: file name, view toggle, more ---------------------------------- */
-/* Shown instead of the save indicator, the view modes, the theme switch and
-   the export button (see "Phones" below) */
-
-.doc-title {
-    min-width: 0;
-    flex: 1;
-    display: none;
-    flex-direction: column;
-    line-height: 1.25;
-}
-
-.doc-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--text-strong);
-}
-
-.doc-save {
-    min-width: 0;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 12px;
-    color: var(--muted);
-    white-space: nowrap;
-}
+/* --- Phones: view toggle, more ------------------------------------------- */
+/* Shown instead of the save indicator, the view modes, the settings, the
+   theme switch and the export button (see "Phones" below) */
 
 .doc-title[data-state="saved"] .save-icon-saved,
 .doc-title[data-state="pending"] .save-icon-pending,
@@ -529,15 +536,358 @@
     overflow: hidden;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius-xl);
+    border-radius: var(--radius-lg);
     box-shadow: var(--shadow-card);
+}
+
+/* Under the top bar: the outline, then the panes */
+.card-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
 }
 
 .panes {
     --split: 50%;
+    position: relative;
     flex: 1;
+    min-width: 0;
     min-height: 0;
     display: flex;
+}
+
+/* --- Outline ------------------------------------------------------------- */
+
+.sidebar {
+    width: 240px;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border-soft);
+    background: var(--surface-sunken);
+}
+
+.sidebar-head {
+    padding: 14px 18px 6px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-strong);
+}
+
+.outline {
+    position: relative;   /* offsetParent of the items, for scrolling them into view */
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+/* Each heading: --level is its depth below the outline's top level */
+.outline-item {
+    --level: 0;
+    width: 100%;
+    min-height: 32px;
+    flex: none;
+    padding: 4px 10px 4px calc(10px + var(--level) * 14px);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-soft);
+    font-size: 13.5px;
+    text-align: left;
+}
+
+.outline-item:hover {
+    background: var(--hover);
+}
+
+.outline-item::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--dot);
+}
+
+.outline-item[aria-current="location"] {
+    background: var(--accent-soft);
+    color: var(--text-strong);
+    font-weight: 500;
+}
+
+.outline-item[aria-current="location"]::before {
+    background: var(--accent);
+}
+
+.outline-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.outline-empty {
+    flex: 1;
+    margin: 0;
+    padding: 8px 18px;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--muted);
+}
+
+.sidebar-foot {
+    flex: none;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px 14px;
+    border-top: 1px solid var(--border-soft);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--muted);
+}
+
+.sidebar-foot svg {
+    margin-top: 2px;
+}
+
+/* --- Typography settings --------------------------------------------------- */
+/* Under the top bar on the right, over the toolbar's end; app.js opens it */
+
+.settings-panel {
+    position: absolute;
+    top: 58px;
+    right: 10px;
+    z-index: 8;
+    width: 356px;
+    max-height: calc(100% - 100px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 6px 0 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-pop);
+    font-size: 13px;
+}
+
+.settings-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px 10px 16px;
+}
+
+.settings-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-strong);
+}
+
+.tb.settings-close {
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-sm);
+    color: var(--muted);
+}
+
+.settings-sec {
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border-top: 1px solid var(--border-soft);
+}
+
+.settings-h {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-strong);
+}
+
+.settings-h > span + span {
+    font-weight: 400;
+    color: var(--muted);
+}
+
+.settings-sec .segmented > button {
+    flex: 1;
+}
+
+.settings-range {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.settings-range input {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    accent-color: var(--accent);
+}
+
+.settings-hint {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.font-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+/* Each font's button is written in that font (once it has been downloaded) */
+.font-chip {
+    height: 34px;
+    padding: 0 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border-strong);
+    border-radius: 9px;
+    background: var(--surface);
+    color: var(--text-control);
+    font-size: 14px;
+    transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.font-chips[data-kind="mono"] .font-chip {
+    font-size: 13px;
+}
+
+.font-chip:hover {
+    background: var(--hover);
+}
+
+.font-chip[aria-pressed="true"] {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--text-strong);
+    box-shadow: 0 0 0 2px var(--accent-ring);
+}
+
+.font-chip small {
+    font-family: var(--font-ui);
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.settings-foot {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 10px 10px 16px;
+    border-top: 1px solid var(--border-soft);
+    background: var(--surface);
+    font-size: 12px;
+    color: var(--muted);
+}
+
+/* A quiet button in the shape of a tab */
+.btn-tab {
+    height: 30px;
+    margin-left: auto;
+    padding: 0 10px;
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.btn-tab:hover {
+    background: var(--hover-strong);
+    color: var(--text);
+}
+
+/* The page's edges while the settings are open (live and preview): the
+   handles on them change the width (app.js places them on the page) */
+.width-guides {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 3;
+    pointer-events: none;
+    box-shadow: inset 1px 0 0 var(--accent-ring), inset -1px 0 0 var(--accent-ring);
+}
+
+.width-label {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    height: 22px;
+    padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    transform: translateX(-50%);
+    border-radius: 6px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.width-edge {
+    position: absolute;
+    top: 120px;
+    width: 12px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: 0 2px 6px -2px rgba(17, 24, 26, 0.18);
+    pointer-events: auto;
+    cursor: ew-resize;
+    touch-action: none;
+}
+
+.width-edge::before {
+    content: "";
+    width: 2px;
+    height: 14px;
+    border-radius: 2px;
+    background: var(--accent);
+}
+
+.width-edge[data-edge="left"] {
+    left: -6px;
+}
+
+.width-edge[data-edge="right"] {
+    right: -6px;
+}
+
+.is-resizing-width,
+.is-resizing-width * {
+    cursor: ew-resize !important;
+    user-select: none;
 }
 
 .pane {
@@ -787,12 +1137,22 @@
         flex: none;
         margin: 6px;
         padding: 6px;
-        gap: 6px;
         border-radius: 18px;
     }
 
     .card {
         flex: none;
+    }
+
+    /* No room beside the document for the outline */
+    .sidebar,
+    .sidebar-toggle {
+        display: none;
+    }
+
+    .settings-panel {
+        left: 10px;
+        width: auto;
     }
 
     .panes {
@@ -821,6 +1181,11 @@
     .statusbar::-webkit-scrollbar {
         display: none;
     }
+
+    /* The counts, typewriter and encoding: in the command palette instead */
+    .statusbar .wide-only {
+        display: none;
+    }
 }
 
 @media (max-width: 640px) {
@@ -830,37 +1195,13 @@
     }
 }
 
-@media (max-width: 400px) {
-    .header-actions {
-        gap: 4px;
-    }
-
-    .segmented-icon > button {
-        width: 28px;
-    }
-
-    .btn-export {
-        width: 36px;
-        padding: 0;
-    }
-
-    .btn-export .btn-label {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-    }
-}
-
 /* --- Phones ------------------------------------------------------------------ */
 /* The app fills the window (app.js fits it to the part above the on-screen
    keyboard): a 60px top bar on the sky with the file menu, the file name,
    live ⇄ source and "more"; the document; the quick bar while editing.
-   The formatting toolbar gets a row of its own in the source and split
-   views (and in live mode without a touch screen); the status bar's
-   settings and counts are in the "more" menu. */
+   The formatting toolbar's row shows in the source and split views (and
+   in live mode without a touch screen); the status bar's settings and
+   counts, and the typography settings, are in the "more" menu. */
 
 @media (max-width: 640px) {
     html,
@@ -891,19 +1232,26 @@
         display: none;
     }
 
-    .app-header,
-    .app-header.is-stacked {
-        min-height: 60px;
-        flex-wrap: wrap;
-        gap: 4px 8px;
-        padding: 7px 8px 8px 12px;
+    .app-header {
         background: var(--sky);
-        border: 0;
         border-bottom: 1px solid var(--border);
-        border-radius: 0;
-        box-shadow: none;
-        -webkit-backdrop-filter: none;
-        backdrop-filter: none;
+    }
+
+    .header-bar {
+        height: auto;
+        min-height: 59px;
+        gap: 8px;
+        padding: 7px 8px 8px 12px;
+        background: none;
+        border: 0;
+    }
+
+    .header-tools {
+        height: auto;
+        margin-top: -4px;
+        padding: 0 8px 8px;
+        background: none;
+        border: 0;
     }
 
     .brand-btn {
@@ -915,19 +1263,48 @@
 
     .brand-btn .chevron,
     .header-sep,
-    .save-status,
+    .doc-icon,
+    .header-actions .pill-slot,
     .header-actions .segmented,
+    .settings-btn,
     .theme-toggle,
     .btn-export {
         display: none;
     }
 
+    /* The file name over its save state */
     .doc-title {
-        display: flex;
+        height: auto;
+        flex: 1;
+        padding: 0;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0;
+        border: 0;
+        border-radius: 0;
+        background: none;
+        box-shadow: none;
+        line-height: 1.25;
     }
 
-    .header-actions,
-    .is-stacked .header-actions {
+    .doc-name {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--text-strong);
+    }
+
+    .doc-save {
+        min-width: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+        font-weight: 400;
+        color: var(--muted);
+        white-space: nowrap;
+    }
+
+    .header-actions {
         gap: 8px;
         padding-left: 0;
     }
@@ -936,13 +1313,20 @@
         display: inline-grid;
     }
 
-    .toolbar,
-    .is-stacked .toolbar {
-        order: 1;
-        flex: 1 1 100%;
+    .app[data-view="preview"] .header-tools {
+        display: none;
     }
 
-    .app[data-view="preview"] .toolbar {
+    /* Under the top bar, over the toolbar when it shows; no page width
+       (a phone is narrower than any) */
+    .settings-panel {
+        top: 66px;
+        left: 8px;
+        right: 8px;
+        max-height: calc(100% - 76px);
+    }
+
+    .settings-width {
         display: none;
     }
 
@@ -972,7 +1356,7 @@
 /* Live mode on a touch screen: the slash menu, the toolbar over selected
    text and the quick bar take the toolbar's place */
 @media (max-width: 640px) and (pointer: coarse) {
-    .app[data-view="live"] .toolbar {
+    .app[data-view="live"] .header-tools {
         display: none;
     }
 }

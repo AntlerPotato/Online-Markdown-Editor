@@ -6,6 +6,7 @@
    ========================================================================== */
 
 .code-editor {
+    --font-mono: var(--font-code);
     --digits: 2;
     --gutter: calc(var(--digits) * 1ch + 38px);
     --pad-right: 20px;

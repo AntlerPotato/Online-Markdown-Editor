@@ -84,6 +84,14 @@
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', monospace;
     --font-math: 'KaTeX_Main', 'Times New Roman', serif;
 
+    /* The document's own typography (set by assets/js/typography.js from
+       the typography settings): fonts, page width and line spacing */
+    --font-doc: 'Outfit', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+    --font-code: var(--font-mono);
+    --doc-width: 760px;
+    --preview-width: 720px;
+    --doc-line-height: 1.85;
+
     /* Dynamic font sizes (driven by the status bar control) */
     --font-size: 14px;
     --editor-font-size: var(--font-size);
@@ -95,9 +103,8 @@
     --radius-control: 10px;   /* toolbar buttons, inputs, dialog buttons */
     --radius: 12px;
     --radius-md: 14px;        /* popovers, TOC box */
-    --radius-lg: 16px;        /* top bar */
-    --radius-xl: 18px;        /* document card */
-    --radius-stage: 22px;
+    --radius-lg: 16px;        /* document card */
+    --radius-stage: 20px;
 
     color-scheme: light;
 }

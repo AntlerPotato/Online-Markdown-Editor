@@ -730,6 +730,103 @@
     }
 }
 
+/* --- Command palette --------------------------------------------------------- */
+/* At the top of the window, in the middle; app.js places it */
+
+.palette {
+    width: 560px;
+    max-width: calc(100vw - 32px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.palette-search {
+    height: 48px;
+    flex: none;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.palette-search svg {
+    flex: none;
+    color: var(--muted);
+}
+
+.palette-search input {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    font-size: 15px;
+    color: var(--text);
+}
+
+.palette-search input::placeholder {
+    color: var(--faint);
+}
+
+.palette-list {
+    position: relative;   /* offsetParent of the options, for scrolling them into view */
+    max-height: 420px;    /* app.js lowers it to the room there is */
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 4px 6px 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.palette-item {
+    height: 36px;
+    cursor: pointer;
+}
+
+.palette-item[aria-selected="true"] {
+    background: var(--hover-strong);
+}
+
+.palette-item[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.palette-icon {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.palette-item > .switch,
+.palette-item > .menu-tick {
+    margin-left: auto;
+}
+
+.palette-item > .menu-tick {
+    color: var(--accent);
+}
+
+.palette-item > .switch + .menu-keys,
+.palette-item > .menu-tick + .menu-keys {
+    margin-left: 0;
+}
+
+.palette-empty {
+    padding: 12px 10px;
+    font-size: 13px;
+    color: var(--muted);
+}
+
 /* Name and shortcut of the toolbar button under the pointer */
 .float-tip {
     position: fixed;
