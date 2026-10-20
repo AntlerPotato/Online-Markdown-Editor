@@ -2,7 +2,8 @@
 // shows its rendered HTML, cached by a hash of its source, until the caret
 // enters it; that block then shows its Markdown source, styled like the
 // rendered text, and only it is rendered again when the caret leaves.
-// Fenced code and formula blocks get editors of their own.
+// Fenced code and formula blocks get editors of their own; a table stays
+// rendered and only the cell with the caret shows its source.
 //
 // The hidden textarea editor keeps the one copy of the document: every
 // change made here goes through editor.replaceRange and the caret through
@@ -21,6 +22,9 @@
     const USES_DEFS = new Set(['paragraph', 'heading', 'quote', 'list', 'table', 'image', 'toc']);
     const MONO_KINDS = new Set(['code', 'fence', 'math', 'html', 'def', 'hr']);
     const PLAIN_ENTER_KINDS = new Set(['code', 'fence', 'math', 'html', 'def', 'table']);
+    // Toolbar commands that rewrite whole lines, and ones that insert a block
+    const LINE_COMMANDS = new Set(['heading', 'quote', 'ul', 'ol', 'task']);
+    const BLOCK_COMMANDS = new Set(['table', 'code', 'math', 'toc', 'hr']);
 
     const IMAGE_ONLY = /^(?:[ \t]*!\[[^\]\n]*\]\([^)\n]*\)[ \t]*(?:\n|$))+$/;
     const TOC_LINE = /^[ \t]*\[TOC\][ \t]*$/m;
@@ -424,7 +428,11 @@
 
         const sourceOf = (b) => (b.gap ? '' : text.slice(b.start, b.end));
         const baseOf = (b) => (b.gap ? b.pos : b.start);
-        const editorFor = (b) => (b.kind === 'fence' ? 'code' : b.kind === 'math' ? 'math' : 'source');
+        const editorFor = (b) => (b.kind === 'fence' ? 'code' : b.kind === 'math' ? 'math' : b.kind === 'table' ? 'table' : 'source');
+        // The text editor of the block (a source block, or a table's open
+        // cell) and the document offset its text starts at
+        const textEditor = (b) => (b && (b.mode === 'source' || b.mode === 'table') ? b.ui.src : null);
+        const textBase = (b) => (b.mode === 'table' ? b.ui.base : baseOf(b));
 
         // Number of blocks that start before pos
         function countBefore(pos) {
@@ -454,7 +462,7 @@
                 case 'math': return '公式块';
                 case 'list': return b.task ? '任务列表' : b.ordered ? '有序列表' : '无序列表';
                 case 'quote': return '引用';
-                case 'table': return '表格';
+                case 'table': return b.mode === 'table' && b.ui.cell ? `表格 · 第 ${b.ui.cell.r + 1} 行第 ${b.ui.cell.c + 1} 列` : '表格';
                 case 'hr': return '分隔线';
                 case 'toc': return '目录';
                 case 'image': return '图片';
@@ -684,6 +692,8 @@
                 Object.assign(b, kindOf(list[0].token, source), { toc: TOC_LINE.test(source) });
                 b.el.className = blockClass(b);
                 refreshEditor(b);
+            } else if (b.mode === 'table') {
+                refreshTable(b);
             }
             scheduleRebuild();
             return true;
@@ -804,6 +814,7 @@
             const type = b.gap ? 'source' : editorFor(b);
             if (type === 'code') mountCode(b);
             else if (type === 'math') mountMath(b);
+            else if (type === 'table') mountTable(b);
             else mountSource(b);
         }
 
@@ -821,6 +832,10 @@
                 if (composing) return;
                 const html = sourceHtml(value);
                 if (src.innerHTML !== html) src.innerHTML = html;
+                return;
+            }
+            if (b.mode === 'table') {
+                refreshTable(b);
                 return;
             }
             const parts = partsOf(sourceOf(b));
@@ -899,6 +914,319 @@
         function sizeMath(ui) {
             ui.input.style.height = '0px';
             ui.input.style.height = ui.input.scrollHeight + 'px';
+        }
+
+        // --- Table editor ---------------------------------------------------
+        // The table stays rendered. The cell with the caret (ui.cell, its
+        // row and column) shows its Markdown source in ui.src, whose text
+        // starts at document offset ui.base; the other cells keep their
+        // rendered HTML.
+
+        const cellHtml = (value) => MDE.syntax.inline(value) + (value ? '' : '<br>');
+
+        function mountTable(b) {
+            b.el.className = blockClass(b);
+            b.el.style.containIntrinsicSize = '';
+            b.el.innerHTML = entryFor(b).html;
+            b.mode = 'table';
+            b.ui = {
+                table: b.el.querySelector('table'),
+                parsed: MDE.table.parse(sourceOf(b)),
+                cell: null,
+                td: null,
+                src: null,
+                base: 0,
+                text: '',
+                rendered: null,
+                renderedHash: null
+            };
+        }
+
+        // A cell as rendered from the table's current source
+        function renderedCell(b, r, c) {
+            const ui = b.ui;
+            if (ui.renderedHash !== b.hash) {
+                const tpl = document.createElement('template');
+                tpl.innerHTML = entryFor(b).html;
+                ui.rendered = tpl.content.querySelector('table');
+                ui.renderedHash = b.hash;
+            }
+            const row = ui.rendered && ui.rendered.rows[r];
+            return row && row.cells[c] ? row.cells[c].innerHTML : '';
+        }
+
+        const tdAt = (b, r, c) => {
+            const row = b.ui.table && b.ui.table.rows[r];
+            return (row && row.cells[c]) || null;
+        };
+
+        function closeCell(b) {
+            const ui = b.ui;
+            if (!ui.cell) return;
+            ui.td.classList.remove('is-current');
+            ui.td.innerHTML = renderedCell(b, ui.cell.r, ui.cell.c);
+            ui.cell = ui.td = ui.src = null;
+        }
+
+        // Show the source of a cell that exists in the source (see goToCell)
+        function openCell(b, r, c) {
+            const ui = b.ui;
+            if (ui.cell && ui.cell.r === r && ui.cell.c === c) return;
+            const cell = ui.parsed.rows[r].cells[c];
+            const td = tdAt(b, r, c);
+            if (!cell || !td) return;
+            closeCell(b);
+            const src = document.createElement('div');
+            src.className = 'lv-src lv-cell';
+            src.contentEditable = EDITABLE;
+            src.spellcheck = false;
+            src.setAttribute('autocapitalize', 'off');
+            src.setAttribute('autocorrect', 'off');
+            src.setAttribute('role', 'textbox');
+            src.setAttribute('aria-label', `表格第 ${r + 1} 行第 ${c + 1} 列（Markdown 源码）`);
+            src.innerHTML = cellHtml(cell.text);
+            td.replaceChildren(src);
+            td.classList.add('is-current');
+            Object.assign(ui, { cell: { r, c }, td, src, base: b.start + cell.from, text: cell.text });
+        }
+
+        // The cell holding a document offset (a pipe or the delimiter line
+        // counts with the cell before it)
+        function cellAt(b, pos) {
+            const { rows, delimiter, cols } = b.ui.parsed;
+            const rel = pos - b.start;
+            let r = rows.findIndex((row) => rel <= row.to);
+            if (r === -1) r = rows.length - 1;
+            if (delimiter && rel >= delimiter.from && rel <= delimiter.to) r = 0;
+            const cells = rows[r].cells;
+            let c = 0;
+            while (c + 1 < Math.min(cells.length, cols) && cells[c + 1].from <= rel) c++;
+            return { r, c };
+        }
+
+        // Put the caret in a cell: where = 'start', 'end' or 'all' (its
+        // text selected); with x, at that column of its first ('start') or
+        // last ('end') line
+        function goToCell(b, r, c, where, x) {
+            const row = b.ui.parsed.rows[r];
+            const cell = row.cells[c];
+            editing = true;
+            if (!cell) {
+                // A row with fewer cells than the header: fill it up first
+                const line = text.slice(b.start + row.from, b.start + row.to);
+                const padded = MDE.table.padRow(line, b.ui.parsed.cols);
+                const at = b.start + row.from + MDE.table.parse(padded).rows[0].cells[c].from;
+                structural = true;
+                editor.replaceRange(b.start + row.from, b.start + row.to, padded, at, at, null);
+                return;
+            }
+            const from = b.start + cell.from;
+            const to = b.start + cell.to;
+            let [start, end] = where === 'all' ? [from, to] : where === 'end' ? [to, to] : [from, from];
+            if (x !== undefined && cell.text) {
+                openCell(b, r, c);
+                const src = b.ui.src;
+                const line = caretRect(src, where === 'end' ? cell.text.length : 0);
+                const hit = pointFromXY(x, (line.top + line.bottom) / 2);
+                if (hit && src.contains(hit.node)) start = end = from + offsetIn(src, hit.node, hit.offset);
+            }
+            editor.select(start, end);
+            applySelection();
+        }
+
+        // A click on a cell of the table being edited
+        function clickCell(b, td, x, y) {
+            const r = td.parentElement.rowIndex;
+            const c = td.cellIndex;
+            if (!b.ui.parsed.rows[r] || c >= b.ui.parsed.cols) return;
+            if (!b.ui.parsed.rows[r].cells[c]) {
+                goToCell(b, r, c, 'start');
+                return;
+            }
+            editing = true;
+            openCell(b, r, c);
+            const src = b.ui.src;
+            const hit = pointFromXY(x, y);
+            const offset = hit && src.contains(hit.node) ? offsetIn(src, hit.node, hit.offset) : src.textContent.length;
+            editor.select(b.ui.base + offset, b.ui.base + offset);
+            applySelection();
+        }
+
+        // The document changed under the table (typing, undo, a command)
+        function refreshTable(b) {
+            const ui = b.ui;
+            const old = ui.parsed;
+            const parsed = MDE.table.parse(sourceOf(b));
+            ui.parsed = parsed;
+            const width = (p, row) => Math.min(row.cells.length, p.cols);
+            const same = parsed.cols === old.cols
+                && parsed.rows.length === old.rows.length
+                && parsed.align.every((a, k) => a === old.align[k])
+                && parsed.rows.every((row, k) => width(parsed, row) === width(old, old.rows[k]));
+            if (!same) {
+                // Rows, columns or alignment changed: the caret's cell opens
+                // again when the selection is applied
+                if (!composing) mountTable(b);
+                return;
+            }
+            parsed.rows.forEach((row, r) => {
+                row.cells.slice(0, parsed.cols).forEach((cell, c) => {
+                    const isOpen = ui.cell && ui.cell.r === r && ui.cell.c === c;
+                    const td = tdAt(b, r, c);
+                    if (!isOpen && td && cell.text !== old.rows[r].cells[c].text) td.innerHTML = renderedCell(b, r, c);
+                });
+            });
+            if (!ui.cell) return;
+            const cell = parsed.rows[ui.cell.r].cells[ui.cell.c];
+            ui.base = b.start + cell.from;
+            ui.text = cell.text;
+            if (composing) return;
+            const html = cellHtml(cell.text);
+            if (ui.src.innerHTML !== html) ui.src.innerHTML = html;
+        }
+
+        // highlight.js or KaTeX arrived: the rendered cells again
+        function repaintCells(b) {
+            const ui = b.ui;
+            ui.renderedHash = null;
+            ui.parsed.rows.forEach((row, r) => {
+                for (let c = 0; c < ui.parsed.cols; c++) {
+                    const td = tdAt(b, r, c);
+                    if (td && !(ui.cell && ui.cell.r === r && ui.cell.c === c)) td.innerHTML = renderedCell(b, r, c);
+                }
+            });
+        }
+
+        // Replace the whole table (one undo step) and put the caret at `at`
+        function replaceTable(b, source, at, kind = 'command') {
+            editing = true;
+            structural = true;
+            editor.replaceRange(b.start, b.end, source, at, at, kind);
+        }
+
+        // An empty row after row r, with the caret in its column c
+        function addRow(b, r, c) {
+            const next = MDE.table.insertRow(sourceOf(b), r, b.ui.parsed.cols);
+            replaceTable(b, next, b.start + MDE.table.parse(next).rows[r + 1].cells[c].from, 'break');
+        }
+
+        // Typing in the open cell: one line, pipes escaped
+        function handleCellInput(type) {
+            const b = active;
+            const ui = b.ui;
+            const value = ui.src.textContent;
+            const old = ui.text;
+            if (value === old) return;
+            const sel = readSelection(ui.src) || { start: value.length, end: value.length };
+            let p = 0;
+            const max = Math.min(old.length, value.length);
+            while (p < max && old[p] === value[p]) p++;
+            let s = 0;
+            while (s < max - p && old[old.length - 1 - s] === value[value.length - 1 - s]) s++;
+            const typed = value.slice(p, value.length - s);
+            const insert = MDE.table.escapeCell(typed);
+            const map = (pos) => ui.base + (pos >= p + typed.length ? pos + insert.length - typed.length : pos);
+            const cell = ui.parsed.rows[ui.cell.r].cells[ui.cell.c];
+            if (!old && cell.end > cell.start) {
+                // The first text in an empty cell: one space on each side
+                const at = b.start + cell.start;
+                selfEdit = { from: at, to: b.start + cell.end, length: insert.length + 2 };
+                editor.replaceRange(selfEdit.from, selfEdit.to, ` ${insert} `, map(sel.start) - ui.base + at + 1, map(sel.end) - ui.base + at + 1, historyKind(type));
+                return;
+            }
+            selfEdit = { from: ui.base + p, to: ui.base + old.length - s, length: insert.length };
+            editor.replaceRange(selfEdit.from, selfEdit.to, insert, map(sel.start), map(sel.end), historyKind(type));
+        }
+
+        // Enter: the cell below (a new row after the last one)
+        function cellEnter(b) {
+            const { r, c } = b.ui.cell;
+            if (r + 1 < b.ui.parsed.rows.length) goToCell(b, r + 1, c, 'all');
+            else addRow(b, r, c);
+        }
+
+        // Tab and Shift+Tab: the next or previous cell, its text selected;
+        // Tab in the last cell adds a row
+        function cellTab(b, back) {
+            const { r, c } = b.ui.cell;
+            const last = b.ui.parsed.cols - 1;
+            if (back) {
+                if (c > 0) goToCell(b, r, c - 1, 'all');
+                else if (r > 0) goToCell(b, r - 1, last, 'all');
+            } else if (c < last) {
+                goToCell(b, r, c + 1, 'all');
+            } else if (r + 1 < b.ui.parsed.rows.length) {
+                goToCell(b, r + 1, 0, 'all');
+            } else {
+                addRow(b, r, 0);
+            }
+        }
+
+        // Arrow keys at the edge of a cell go to the next cell, and out of
+        // the table from its edges
+        function cellArrow(e, b) {
+            const src = b.ui.src;
+            const sel = readSelection(src);
+            if (!sel || sel.start !== sel.end) return;
+            const length = src.textContent.length;
+            const { r, c } = b.ui.cell;
+            const rows = b.ui.parsed.rows.length;
+            const last = b.ui.parsed.cols - 1;
+            const key = e.key;
+            const back = key === 'ArrowUp' || key === 'ArrowLeft';
+            let target = null;
+            let x;
+            if (key === 'ArrowLeft' && sel.start === 0) {
+                target = c > 0 ? [r, c - 1, 'end'] : r > 0 ? [r - 1, last, 'end'] : 'out';
+            } else if (key === 'ArrowRight' && sel.start === length) {
+                target = c < last ? [r, c + 1, 'start'] : r + 1 < rows ? [r + 1, 0, 'start'] : 'out';
+            } else if (key === 'ArrowUp' || key === 'ArrowDown') {
+                // Only from the first or last line of a cell whose text wraps
+                const caret = caretRect(src, sel.start);
+                const edge = caretRect(src, back ? 0 : length);
+                const mid = (caret.top + caret.bottom) / 2;
+                if (length && (back ? mid > edge.bottom : mid < edge.top)) return;
+                x = caret.left;
+                const next = r + (back ? -1 : 1);
+                target = next < 0 || next >= rows ? 'out' : [next, c, back ? 'end' : 'start'];
+            }
+            if (!target) return;
+            e.preventDefault();
+            if (target !== 'out') {
+                goToCell(b, target[0], target[1], target[2], x);
+                return;
+            }
+            const index = indexOf(b);
+            const neighbour = back ? blocks[index - 1] : blocks[index + 1];
+            if (neighbour) enter(neighbour, back ? 'end' : 'start', x);
+            else if (key === 'ArrowDown') goToGap(text.length, blocks.length);
+        }
+
+        // The table toolbar: align the caret's column, add a row below or a
+        // column to the right of its cell, or delete the table
+        function tableCommand(name) {
+            const b = active;
+            if (!b || b.mode !== 'table' || !b.ui.cell) return;
+            const { r, c } = b.ui.cell;
+            if (name === 'delete') {
+                removeBlock(b);
+                return;
+            }
+            const source = sourceOf(b);
+            const offset = clamp(editor.getSelection().start - b.ui.base, 0, b.ui.text.length);
+            let next = source;
+            let at = null;
+            if (name === 'row') {
+                next = MDE.table.insertRow(source, r, b.ui.parsed.cols);
+                at = MDE.table.parse(next).rows[r + 1].cells[c].from;
+            } else if (name === 'column') {
+                next = MDE.table.insertColumn(source, c);
+                at = MDE.table.parse(next).rows[r].cells[c + 1].from;
+            } else {
+                next = MDE.table.setAlign(source, c, name);
+                at = MDE.table.parse(next).rows[r].cells[c].from + offset;
+            }
+            if (next !== source) replaceTable(b, next, b.start + at);
         }
 
         // Write a code/formula editor back into the document
@@ -984,9 +1312,13 @@
             const b = active;
             if (!b) return;
             const sel = editor.getSelection();
-            const base = baseOf(b);
             const focus = !suppressFocus && shouldFocus();
-            if (b.mode === 'source') {
+            if (b.mode === 'table') {
+                const { r, c } = cellAt(b, sel.start);
+                openCell(b, r, c);
+            }
+            const base = textBase(b);
+            if (textEditor(b)) {
                 const src = b.ui.src;
                 const length = src.textContent.length;
                 const start = clamp(sel.start - base, 0, length);
@@ -1000,7 +1332,7 @@
                     const now = readSelection(src);
                     if (!now || now.start !== start || now.end !== end) writeSelection(src, start, end);
                 }
-            } else {
+            } else if (b.mode !== 'table') {
                 const input = b.ui.input;
                 const offset = base + b.ui.parts.open.length;
                 const length = input.value.length;
@@ -1040,6 +1372,9 @@
             if (b.mode === 'source') {
                 const s = readSelection(b.ui.src);
                 if (s) range = b.gap ? { start: b.pos, end: b.pos } : { start: b.start + s.start, end: b.start + s.end };
+            } else if (b.mode === 'table') {
+                const s = b.ui.src && readSelection(b.ui.src);
+                if (s) range = { start: b.ui.base + s.start, end: b.ui.base + s.end };
             } else if (b.ui && document.activeElement === b.ui.input) {
                 const offset = b.start + b.ui.parts.open.length;
                 range = {
@@ -1065,8 +1400,8 @@
         function caretBox() {
             const b = active;
             if (!b || !b.ui) return null;
-            if (b.mode === 'source') {
-                const s = readSelection(b.ui.src);
+            if (b.mode === 'source' || b.mode === 'table') {
+                const s = textEditor(b) && readSelection(b.ui.src);
                 return s ? caretRect(b.ui.src, s.end) : null;
             }
             const input = b.ui.input;
@@ -1097,6 +1432,16 @@
             editing = true;
             const b = active;
             const base = baseOf(b);
+            if (b.mode === 'table') {
+                // The first or last row, in the column under x
+                const r = edge === 'end' ? b.ui.parsed.rows.length - 1 : 0;
+                const tds = b.ui.table ? Array.from(b.ui.table.rows[r].cells) : [];
+                let c = x === undefined ? (edge === 'end' ? b.ui.parsed.cols - 1 : 0)
+                    : tds.findIndex((td) => x < td.getBoundingClientRect().right);
+                if (c === -1) c = b.ui.parsed.cols - 1;
+                goToCell(b, r, clamp(c, 0, b.ui.parsed.cols - 1), edge === 'end' ? 'end' : 'start', x);
+                return;
+            }
             if (b.mode === 'source') {
                 const src = b.ui.src;
                 const length = src.textContent.length;
@@ -1137,6 +1482,13 @@
             const box = b.el.getBoundingClientRect();
             y = clamp(y + box.top - top, box.top + 1, box.bottom - 1);
             const base = baseOf(b);
+            if (b.mode === 'table') {
+                const hit = document.elementFromPoint(x, y);
+                const td = hit && hit.closest('td, th');
+                if (td && b.ui.table && b.ui.table.contains(td)) clickCell(b, td, x, y);
+                else goToCell(b, 0, 0, 'start');
+                return;
+            }
             if (b.mode === 'source') {
                 const src = b.ui.src;
                 const hit = pointFromXY(x, y);
@@ -1196,6 +1548,10 @@
         // The browser changed the text of the source editor
         function handleInput(type) {
             const b = active;
+            if (b.mode === 'table') {
+                handleCellInput(type);
+                return;
+            }
             const src = b.ui.src;
             const value = src.textContent;
             const old = sourceOf(b);
@@ -1224,7 +1580,10 @@
         function insertText(str, kind) {
             const b = active;
             const sel = readSelection(b.ui.src) || { start: 0, end: 0 };
-            if (b.gap) {
+            if (b.mode === 'table') {
+                const value = MDE.table.escapeCell(str);
+                edit(b.ui.base + sel.start, b.ui.base + sel.end, value, b.ui.base + sel.start + value.length, kind);
+            } else if (b.gap) {
                 const pad = gapPadding(b.pos);
                 edit(b.pos, b.pos, pad.lead + str + pad.trail, b.pos + pad.lead.length + str.length, kind);
             } else {
@@ -1235,6 +1594,10 @@
         function handleEnter(soft) {
             const b = active;
             if (b.gap) return;
+            if (b.mode === 'table') {
+                cellEnter(b);
+                return;
+            }
             const sel = readSelection(b.ui.src);
             if (!sel) return;
             const value = sourceOf(b);
@@ -1311,6 +1674,8 @@
             if (!sel || sel.start !== sel.end) return;
             if (backward ? sel.start !== 0 : sel.start !== b.ui.src.textContent.length) return;
             e.preventDefault();
+            // Cells are not joined
+            if (b.mode === 'table') return;
             if (b.gap) {
                 const target = backward ? blocks[b.index - 1] : blocks[b.index];
                 if (target) enter(target, backward ? 'end' : 'start');
@@ -1322,6 +1687,10 @@
 
         function handleArrow(e) {
             const b = active;
+            if (b.mode === 'table') {
+                cellArrow(e, b);
+                return;
+            }
             const key = e.key;
             const back = key === 'ArrowUp' || key === 'ArrowLeft';
             const vertical = key === 'ArrowUp' || key === 'ArrowDown';
@@ -1389,8 +1758,8 @@
 
         function updateBubble() {
             const b = active;
-            if (!b || b.mode !== 'source' || composing) return hideBubble();
-            const src = b.ui.src;
+            const src = textEditor(b);
+            if (!src || composing) return hideBubble();
             const sel = readSelection(src);
             if (!sel || sel.start !== sel.end) return hideBubble();
             const value = src.textContent;
@@ -1492,12 +1861,12 @@
         // This holds while focus is elsewhere, e.g. in the link dialog.
         function selectionRect() {
             const b = active;
-            if (!b || b.gap || b.mode !== 'source') return null;
-            const src = b.ui.src;
+            const src = textEditor(b);
+            if (!src || b.gap) return null;
             const sel = editor.getSelection();
             const length = src.textContent.length;
-            const start = clamp(sel.start - b.start, 0, length);
-            const end = clamp(sel.end - b.start, 0, length);
+            const start = clamp(sel.start - textBase(b), 0, length);
+            const end = clamp(sel.end - textBase(b), 0, length);
             if (start === end) {
                 const r = caretRect(src, start);
                 return onScreen({ top: r.top, bottom: r.bottom, left: r.left, right: r.left, width: 0, height: r.bottom - r.top });
@@ -1509,15 +1878,113 @@
         // selection in a source editor that has focus
         function selectionState() {
             const b = active;
-            if (!visible || !b || b.gap || b.mode !== 'source' || composing || document.activeElement !== b.ui.src) return null;
-            const s = readSelection(b.ui.src);
+            const src = textEditor(b);
+            if (!visible || !src || b.gap || composing || document.activeElement !== src) return null;
+            const s = readSelection(src);
             if (!s) return null;
-            return { el: b.ui.src, kind: b.kind, start: b.start + s.start, end: b.start + s.end, collapsed: s.start === s.end };
+            const base = textBase(b);
+            return { el: src, kind: b.kind, start: base + s.start, end: base + s.end, collapsed: s.start === s.end };
         }
 
-        // --- Events -------------------------------------------------------------
+        // --- Whole blocks: the block handle and its menu ------------------------
 
-        const inSource = (b, target) => b && b.mode === 'source' && b.ui.src.contains(target);
+        // The block an element of the live view shows (null once it is gone)
+        function blockOf(el) {
+            const b = el && el.isConnected ? byElement.get(el) : null;
+            return b && (b.gap ? b === active : blocks.includes(b)) ? b : null;
+        }
+
+        // An empty line under the block, with the caret on it
+        function insertBelow(b) {
+            if (!b.gap) goToGap(b.end, indexOf(b) + 1);
+        }
+
+        // Where the caret goes when the text [from, to) is replaced by
+        // `length` characters: it moves with the text after the change, and
+        // a caret inside it goes to its start
+        const mapper = (from, to, length) => (pos) => (pos < from ? pos : pos >= to ? pos + length - (to - from) : from);
+
+        // Take a block out with the blank lines that separate it from its
+        // neighbours. A caret inside it goes to where the next block now is.
+        function removeBlock(b) {
+            if (b.gap) return;
+            const k = indexOf(b);
+            const next = blocks[k + 1];
+            const prev = blocks[k - 1];
+            const from = next ? b.start : prev ? prev.end : 0;
+            const to = next ? next.start : prev ? b.end : text.length;
+            const sel = editor.getSelection();
+            const map = mapper(from, to, 0);
+            structural = true;
+            editor.replaceRange(from, to, '', map(sel.start), map(sel.end));
+        }
+
+        // New source for a block (converted to another type); the caret goes
+        // to `caret` in it and the block is edited
+        function replaceBlock(b, source, caret = source.length) {
+            if (b.gap) return;
+            editing = true;
+            structural = true;
+            editor.replaceRange(b.start, b.end, source, b.start + caret, b.start + caret);
+        }
+
+        // Move a block in front of blocks[index] (blocks.length: to the end),
+        // as one undo step. The caret moves with the text it is in.
+        function moveBlock(b, index) {
+            const k = indexOf(b);
+            if (b.gap || index === k || index === k + 1 || index < 0 || index > blocks.length) return;
+            const source = sourceOf(b);
+            const next = blocks[k + 1];
+            const prev = blocks[k - 1];
+            const [from, to] = next ? [b.start, next.start] : [prev.end, b.end];
+            const out = mapper(from, to, 0);
+            const rest = text.slice(0, from) + text.slice(to);
+            const target = blocks[index];
+            const at = target ? out(target.start) : out(blocks[blocks.length - 1].end);
+            const before = rest.slice(0, at);
+            const after = rest.slice(at);
+            const lead = !before.trim() || before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n';
+            const trail = !after.trim() || after.startsWith('\n\n') ? '' : after.startsWith('\n') ? '\n' : '\n\n';
+            const value = before + lead + source + trail + after;
+            const moved = (pos) => (pos >= b.start && pos <= b.end ? at + lead.length + pos - b.start
+                : out(pos) >= at ? out(pos) + lead.length + source.length + trail.length : out(pos));
+            // The smallest replacement that turns the text into the new one
+            let p = 0;
+            const max = Math.min(text.length, value.length);
+            while (p < max && text[p] === value[p]) p++;
+            let s = 0;
+            while (s < max - p && text[text.length - 1 - s] === value[value.length - 1 - s]) s++;
+            const sel = editor.getSelection();
+            structural = true;
+            editor.replaceRange(p, text.length - s, value.slice(p, value.length - s), moved(sel.start), moved(sel.end));
+        }
+
+        // What the block handle shows and its menu acts on
+        function blockInfo(el) {
+            const b = blockOf(el);
+            if (!b) return null;
+            return {
+                kind: b.kind,
+                depth: b.depth || 0,
+                gap: !!b.gap,
+                active: b === active,
+                index: indexOf(b),
+                source: sourceOf(b)
+            };
+        }
+
+        // The "+" beside an empty line: type "/" there, so the slash menu
+        // opens. If the menu is then closed unused, the "/" goes again.
+        function startSlash() {
+            const b = active;
+            if (!b || !(b.gap || (b.mode === 'source' && !sourceOf(b)))) return;
+            editing = true;
+            insertText('/', 'break');
+            updateSlash(true);
+            if (slash) slash.auto = editor.getValue();
+        }
+
+        const inSource = (b, target) => !!textEditor(b) && b.ui.src.contains(target);
         const inInput = (b, target) => b && (b.mode === 'code' || b.mode === 'math') && target === b.ui.input;
 
         root.addEventListener('compositionstart', () => {
@@ -1609,6 +2076,13 @@
                 stopEditing(true);
                 return;
             }
+            // Ctrl+Enter: an empty line under the block
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+                e.preventDefault();
+                flush();
+                if (active === b) insertBelow(b);
+                return;
+            }
             if (e.target === b.ui.lang) {
                 if (e.key === 'Enter' || e.key === 'ArrowDown') {
                     e.preventDefault();
@@ -1636,6 +2110,13 @@
                 case 'ArrowRight':
                     if (!e.shiftKey && !e.metaKey) handleArrow(e);
                     break;
+                case 'Tab':
+                    if (source && b.mode === 'table' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                        e.preventDefault();
+                        flush();
+                        if (active === b) cellTab(b, e.shiftKey);
+                    }
+                    break;
                 default:
                     break;
             }
@@ -1645,8 +2126,31 @@
             keyboardCaret = false;
         }, true);
 
+        // In the table being edited, a press on another cell opens that
+        // cell; after a press elsewhere in the table (its border, its
+        // scrollbar) focus goes back to the open cell. Ctrl/⌘ + click still
+        // follows a link.
+        root.addEventListener('mousedown', (e) => {
+            const b = active;
+            if (e.button !== 0 || !b || b.mode !== 'table' || !b.el.contains(e.target)) return;
+            if ((e.ctrlKey || e.metaKey) && e.target.closest('a[href]')) return;
+            const td = e.target.closest('td, th');
+            if (td && td === b.ui.td) return;
+            if (!td || !b.ui.table.contains(td)) {
+                requestAnimationFrame(() => {
+                    const src = active === b && b.mode === 'table' ? b.ui.src : null;
+                    if (src && !src.contains(document.activeElement)) src.focus({ preventScroll: true });
+                });
+                return;
+            }
+            e.preventDefault();
+            flush();
+            if (active === b && b.mode === 'table') clickCell(b, td, e.clientX, e.clientY);
+        });
+
         scroller.addEventListener('click', (e) => {
-            if (e.defaultPrevented || e.button !== 0 || e.target === bubble) return;
+            // Only the document and the margins around it (not the block handle)
+            if (e.defaultPrevented || e.button !== 0 || (e.target !== scroller && !root.contains(e.target))) return;
             const el = e.target.closest('.lv-block');
             const b = el && byElement.get(el);
             if (b && b === active) return;
@@ -1727,13 +2231,20 @@
             },
 
             // Before a toolbar command: the command works on the document's
-            // selection, so an empty line opened with Enter is made real first
-            beforeCommand() {
-                if (!visible) return;
+            // selection, so an empty line opened with Enter is made real
+            // first. In a table cell, commands that work on whole lines
+            // would break the table: they do nothing (false), and new
+            // blocks go under the table.
+            beforeCommand(name) {
+                if (!visible) return true;
                 editing = true;
                 flush();
                 captureSelection();
                 const b = active;
+                if (b && b.mode === 'table') {
+                    if (LINE_COMMANDS.has(name)) return false;
+                    if (BLOCK_COMMANDS.has(name)) editor.select(b.end, b.end);
+                }
                 if (b && b.gap) {
                     const pad = gapPadding(b.pos);
                     const at = b.pos + pad.lead.length;
@@ -1743,18 +2254,65 @@
                 // opens that block's editor
                 structural = true;
                 queueMicrotask(() => { structural = false; });
+                return true;
             },
 
             // Slash menu: insert the chosen block, or forget the "/" once
-            // the menu was closed some other way (it stays as text)
+            // the menu was closed some other way (it stays as text, unless
+            // the "+" beside an empty line typed it); startSlash: the "+"
             applySlash,
             dismissSlash() {
+                const b = active;
+                const auto = slash && slash.auto;
                 slash = null;
+                // Opened with the "+" button and closed unused (Esc, or a
+                // click elsewhere): take the "/" away
+                if (auto && editor.getValue() === auto && textEditor(b) && document.activeElement === b.ui.src) editor.undo();
             },
+            startSlash,
 
             slashRect,
             selectionRect,
             selectionState,
+
+            // The table toolbar
+            tableState() {
+                const b = active;
+                if (!visible || !b || b.mode !== 'table' || !b.ui.cell || document.activeElement !== b.ui.src) return null;
+                return { el: b.el, td: b.ui.td, align: b.ui.parsed.align[b.ui.cell.c] || null };
+            },
+            tableCommand(name) {
+                flush();
+                tableCommand(name);
+            },
+
+            // The block handle: blocks are named by their element
+            blockInfo,
+            activeElement: () => (active ? active.el : null),
+            blockHtml(el) {
+                const b = blockOf(el);
+                return b && !b.gap ? entryFor(b).html : '';
+            },
+            insertBelow(el) {
+                flush();
+                const b = blockOf(el);
+                if (b) insertBelow(b);
+            },
+            removeBlock(el) {
+                flush();
+                const b = blockOf(el);
+                if (b) removeBlock(b);
+            },
+            replaceBlock(el, source, caret) {
+                flush();
+                const b = blockOf(el);
+                if (b) replaceBlock(b, source, caret);
+            },
+            moveBlock(el, index) {
+                flush();
+                const b = blockOf(el);
+                if (b) moveBlock(b, index);
+            },
 
             // highlight.js or KaTeX arrived: render what was waiting for them
             refreshLibraries() {
@@ -1764,6 +2322,7 @@
                 });
                 if (active && active.mode === 'code') paintCode(active.ui);
                 if (active && active.mode === 'math') paintMath(active.ui);
+                if (active && active.mode === 'table') repaintCells(active);
                 updateBubble();
                 tocKey = '';
                 refreshHeadings();
