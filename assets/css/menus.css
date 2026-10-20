@@ -385,6 +385,67 @@
     }
 }
 
+/* --- Live mode: block menu ------------------------------------------------ */
+/* Two cards side by side: the menu, and "转换为" beside it (under it when
+   the window is too narrow) */
+
+.popover.block-menu {
+    max-width: calc(100vw - 16px);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 6px;
+    background: none;
+    border: 0;
+    box-shadow: none;
+}
+
+.block-menu .menu {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-pop);
+}
+
+.block-menu-main {
+    width: 216px;
+}
+
+.block-menu-sub {
+    width: 156px;
+}
+
+.block-menu [aria-expanded="true"] {
+    background: var(--hover-strong);
+}
+
+.menu-chevron,
+.menu-tick {
+    margin-left: auto;
+}
+
+.menu-item > .menu-chevron {
+    color: var(--muted);
+}
+
+.menu-tick {
+    visibility: hidden;
+}
+
+.block-menu [aria-checked="true"] {
+    color: var(--link);
+    font-weight: 500;
+}
+
+[aria-checked="true"] > .menu-tick {
+    visibility: visible;
+}
+
+.menu-item.is-danger,
+.menu-item.is-danger > svg {
+    color: var(--danger);
+}
+
 /* --- Live mode: toolbar over selected text ------------------------------- */
 
 .float-bar {
@@ -403,6 +464,15 @@
 
 .float-bar .tb[aria-pressed="true"] {
     color: var(--accent);
+}
+
+.float-bar .tb-sep {
+    height: 18px;
+    margin: 0 3px;
+}
+
+.float-bar .tb-danger {
+    color: var(--danger);
 }
 
 @media (pointer: coarse) {
@@ -434,4 +504,50 @@
     opacity: 0.75;
     font-family: var(--font-mono);
     font-size: 11px;
+}
+
+/* --- Toast ---------------------------------------------------------------- */
+/* A short confirmation at the bottom of the window (app.js hides it again
+   after 1.6 s) */
+
+.toast {
+    position: fixed;
+    left: 50%;
+    bottom: 64px;
+    z-index: 102;
+    height: 40px;
+    max-width: calc(100vw - 32px);
+    padding: 0 16px 0 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--on-ink);
+    box-shadow: var(--shadow-pop);
+    font-size: 13.5px;
+    font-weight: 500;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transform: translate(-50%, 6px);
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s linear 0.2s;
+}
+
+.toast.is-shown {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, 0);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.toast.is-error svg {
+    display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .toast {
+        transition: none;
+    }
 }

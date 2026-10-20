@@ -1,7 +1,8 @@
 // Floating tools of live mode: the slash menu (type "/" on an empty line to
-// insert a block, keep typing to filter it) and the formatting toolbar over
-// selected text. Both are popovers, so only one floating panel is open at
-// a time; focus stays in the text, and live.js hands them their keys.
+// insert a block, keep typing to filter it), the formatting toolbar over
+// selected text and the toolbar of the table being edited. All are
+// popovers, so only one floating panel is open at a time; focus stays in
+// the text, and live.js hands them their keys.
 (function (MDE) {
     const { popover } = MDE;
 
@@ -12,7 +13,7 @@
     const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
     const normalize = (text) => text.toLowerCase().replace(/\s+/g, '');
 
-    MDE.createLiveTools = function ({ live, scroller, slashMenu, toolbar, tip }) {
+    MDE.createLiveTools = function ({ live, scroller, slashMenu, toolbar, tableBar, tip }) {
         const isOpen = (panel) => {
             const open = popover.current();
             return !!open && open.panel === panel;
@@ -151,12 +152,12 @@
         list.addEventListener('click', (e) => choose(e.target.closest('[role="option"]')));
 
         // ====================================================================
-        // Selection toolbar
+        // Selection toolbar and table toolbar
         // ====================================================================
 
-        let barAnchor = null;
         let dismissed = null;   // the selection ("start:end") whose toolbar was closed with Esc
         let dragging = false;
+        let table = null;       // live.tableState() while the table toolbar is open
 
         // Above the selection, centred on it; below it when there is no room
         // above, and on touch screens, where the system's own selection
@@ -183,32 +184,77 @@
             panel.dataset.side = top < rect.top ? 'above' : 'below';
         }
 
+        // Above the table, at its left edge; when that is out of view, under
+        // it, else just outside the cell being edited
+        function placeTableBar(panel) {
+            hideTip();
+            const box = scroller.getBoundingClientRect();
+            const rect = (table.el.querySelector('.table-wrap') || table.el).getBoundingClientRect();
+            const visible = rect.bottom > box.top && rect.top < box.bottom;
+            panel.style.visibility = visible ? '' : 'hidden';
+            if (!visible) return;
+            const width = panel.offsetWidth;
+            const height = panel.offsetHeight;
+            let top = rect.top - height - 8;
+            if (top < box.top + 4) {
+                const cell = table.td.getBoundingClientRect();
+                top = rect.bottom + 8 + height <= box.bottom ? rect.bottom + 8
+                    : cell.top - height - 8 >= box.top + 4 ? cell.top - height - 8
+                    : cell.bottom + 8;
+            }
+            panel.style.left = clamp(rect.left, 8, document.documentElement.clientWidth - width - 8) + 'px';
+            panel.style.top = clamp(top, 8, window.innerHeight - height - 8) + 'px';
+            panel.dataset.side = top < rect.top ? 'above' : 'below';
+        }
+
+        // The alignment of the caret's column (none shows as left)
+        function paintTableBar() {
+            tableBar.querySelectorAll('[data-table][aria-pressed]').forEach((el) => {
+                const align = el.dataset.table;
+                el.setAttribute('aria-pressed', String(table.align === align || (!table.align && align === 'left')));
+            });
+        }
+
         function closedToolbar() {
-            barAnchor = null;
+            table = null;
             hideTip();
         }
 
-        // Show, move or hide the toolbar for the current selection
+        // Show, move or hide the toolbars: the formatting one while text is
+        // selected, else the table one while a table cell is being edited
         function refresh() {
             const state = dragging ? null : live.selectionState();
             const key = state && `${state.start}:${state.end}`;
             if (dismissed && dismissed !== key) dismissed = null;
-            const wanted = !!state && !state.collapsed && !PLAIN_KINDS.has(state.kind) && !dismissed;
+            const text = !!state && !state.collapsed && !PLAIN_KINDS.has(state.kind) && !dismissed;
+            const cell = text ? null : live.tableState();
+            const panel = text ? toolbar : cell ? tableBar : null;
+            const anchor = text ? state.el : cell ? cell.el : null;
             const open = popover.current();
-            if (open && open.panel === toolbar) {
-                if (wanted && barAnchor === state.el) {
+            if (open && (open.panel === toolbar || open.panel === tableBar)) {
+                if (open.panel === panel && open.anchor === anchor) {
+                    if (cell) {
+                        table = cell;
+                        paintTableBar();
+                    }
                     popover.update();
                     return;
                 }
                 popover.close(false);
             }
             // Never push another open panel aside (a menu, the link dialog)
-            if (!wanted || popover.current()) return;
-            barAnchor = state.el;
-            popover.open(toolbar, state.el, { place: placeToolbar, onClose: closedToolbar });
+            if (!panel || popover.current()) return;
+            table = cell;
+            if (cell) paintTableBar();
+            popover.open(panel, anchor, { place: cell ? placeTableBar : placeToolbar, onClose: closedToolbar });
         }
 
         toolbar.addEventListener('mousedown', (e) => e.preventDefault());
+        tableBar.addEventListener('mousedown', (e) => e.preventDefault());
+        tableBar.addEventListener('click', (e) => {
+            const button = e.target.closest('[data-table]');
+            if (button) live.tableCommand(button.dataset.table);
+        });
 
         // No toolbar while a selection is being dragged out
         scroller.addEventListener('pointerdown', (e) => {
@@ -225,7 +271,7 @@
 
         // --- Tooltips: the button's name and shortcut ---------------------
 
-        function showTip(button) {
+        function showTip(button, bar) {
             tip.textContent = button.getAttribute('aria-label');
             if (button.dataset.keys) {
                 const keys = document.createElement('span');
@@ -234,9 +280,9 @@
             }
             tip.hidden = false;
             const b = button.getBoundingClientRect();
-            const bar = toolbar.getBoundingClientRect();
+            const box = bar.getBoundingClientRect();
             // On the side away from the text
-            const top = toolbar.dataset.side === 'below' ? bar.bottom + 6 : bar.top - tip.offsetHeight - 6;
+            const top = bar.dataset.side === 'below' ? box.bottom + 6 : box.top - tip.offsetHeight - 6;
             tip.style.left = clamp(b.left + b.width / 2 - tip.offsetWidth / 2, 8, document.documentElement.clientWidth - tip.offsetWidth - 8) + 'px';
             tip.style.top = Math.max(8, top) + 'px';
         }
@@ -245,12 +291,14 @@
             tip.hidden = true;
         }
 
-        toolbar.addEventListener('pointerover', (e) => {
-            const button = e.target.closest('.tb');
-            if (button && e.pointerType === 'mouse') showTip(button);
+        [toolbar, tableBar].forEach((bar) => {
+            bar.addEventListener('pointerover', (e) => {
+                const button = e.target.closest('.tb');
+                if (button && e.pointerType === 'mouse') showTip(button, bar);
+            });
+            bar.addEventListener('pointerleave', hideTip);
+            bar.addEventListener('click', hideTip);
         });
-        toolbar.addEventListener('pointerleave', hideTip);
-        toolbar.addEventListener('click', hideTip);
 
         // ====================================================================
         // Shared
@@ -275,11 +323,11 @@
             return false;
         }
 
-        // Focus left the text (Tab, a click elsewhere): close both
+        // Focus left the text (Tab, a click elsewhere): close them
         scroller.addEventListener('focusout', () => {
             requestAnimationFrame(() => {
                 const open = popover.current();
-                if (open && (open.panel === slashMenu || open.panel === toolbar) && !open.anchor.contains(document.activeElement)) {
+                if (open && [slashMenu, toolbar, tableBar].includes(open.panel) && !open.anchor.contains(document.activeElement)) {
                     popover.close(false);
                 }
             });

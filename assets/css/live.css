@@ -201,6 +201,27 @@
     box-shadow: 0 0 0 4px var(--accent-ring);
 }
 
+/* --- Table editor ------------------------------------------------------------ */
+/* The table stays rendered; the cell with the caret shows its source */
+
+/* Room above it for its toolbar (live-tools.js) */
+.live-doc .lv-k-table.is-active {
+    margin-top: 56px;
+}
+
+.live-doc .lv-k-table.is-active :is(td, th) {
+    cursor: text;
+}
+
+.markdown-preview :is(td, th).is-current {
+    box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* Headers don't wrap (preview.css), and neither does their source */
+.markdown-preview th > .lv-cell {
+    white-space: pre;
+}
+
 /* --- Code block editor ----------------------------------------------------- */
 /* A transparent textarea over the highlighted code, as in the source editor */
 
@@ -376,16 +397,97 @@
     font-size: 1.15em !important;
 }
 
+/* --- Block handle ---------------------------------------------------------- */
+/* One handle for the whole view, placed beside a block's first line by
+   live-blocks.js: faint beside the block under the pointer, on a light
+   background beside the block being edited, "+" beside an empty line */
+
+.lv-grip {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 3;
+    width: 24px;
+    height: 24px;
+    margin-left: -42px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--faint);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    animation: grip-in 0.15s ease-out;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+@keyframes grip-in {
+    from {
+        opacity: 0;
+    }
+}
+
+.lv-grip.is-active {
+    background: var(--hover-strong);
+    color: var(--muted);
+}
+
+.lv-grip:hover,
+.lv-grip[aria-expanded="true"],
+.lv-grip.is-dragging {
+    background: var(--pressed);
+    color: var(--text);
+}
+
+.lv-grip[data-kind="add"] {
+    cursor: pointer;
+}
+
+.lv-grip[data-kind="add"] .lv-grip-dots,
+.lv-grip[data-kind="grip"] .lv-grip-add {
+    display: none;
+}
+
+/* Dragging a block: it fades where it was, a line shows where it goes */
+.lv-block.is-dragged {
+    opacity: 0.4;
+}
+
+body.is-dragging-block,
+body.is-dragging-block * {
+    cursor: grabbing !important;
+}
+
+.lv-drop {
+    position: absolute;
+    z-index: 3;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--accent);
+    pointer-events: none;
+}
+
 /* --- Small screens --------------------------------------------------------- */
 
 @media (max-width: 860px) {
     .live-doc {
-        padding: 24px 20px 96px 28px;
+        padding: 24px 20px 96px 32px;
+    }
+
+    .lv-grip {
+        margin-left: -30px;
     }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .lv-block {
+    .lv-block,
+    .lv-grip {
         transition: none;
+        animation: none;
     }
 }

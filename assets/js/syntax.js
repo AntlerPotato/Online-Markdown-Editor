@@ -226,5 +226,7 @@
         return out;
     }
 
-    MDE.syntax = { highlight };
+    // highlight: one HTML string per line of a document; inline: the
+    // inline rules alone (a table cell in live mode)
+    MDE.syntax = { highlight, inline: (text) => inline(text, false) };
 })(window.MDE = window.MDE || {});

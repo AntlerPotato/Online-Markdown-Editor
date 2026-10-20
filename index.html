@@ -137,6 +137,9 @@
                     <div class="pane pane-live" id="livePane">
                         <div class="preview-scroll live-scroll" id="liveScroll" role="region" aria-label="实时编辑" tabindex="0">
                             <article class="markdown-preview live-doc" id="live" data-placeholder="输入 / 插入块，或直接开始写作"></article>
+                            <!-- Block handle: beside the block under the pointer and the block being edited ("+" beside an empty line) -->
+                            <button type="button" class="lv-grip" id="blockHandle" tabindex="-1" data-kind="grip" aria-label="块菜单" aria-haspopup="menu" aria-expanded="false" aria-controls="blockMenuMain" hidden><svg class="lv-grip-dots" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg><svg class="lv-grip-add" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+                            <div class="lv-drop" id="dropLine" aria-hidden="true" hidden></div>
                         </div>
                     </div>
 
@@ -287,7 +290,40 @@
         <button type="button" class="tb" tabindex="-1" data-command="link" aria-label="链接" aria-haspopup="dialog" aria-expanded="false" aria-keyshortcuts="Control+K" data-keys="Ctrl K"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></button>
         <button type="button" class="tb" tabindex="-1" data-command="clear-format" aria-label="清除格式"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg></button>
     </div>
+    <!-- Block menu (live mode): opened from the block handle; "转换为" opens the second menu beside it -->
+    <div class="popover block-menu" id="blockMenu" hidden>
+        <div class="menu block-menu-main" id="blockMenuMain" role="menu" aria-label="块操作">
+            <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-block-action="convert" aria-haspopup="menu" aria-expanded="false" aria-controls="blockMenuConvert"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>转换为<svg class="menu-chevron" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+            <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-block-action="below" aria-keyshortcuts="Control+Enter"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>在下方插入<span class="menu-keys fine-only" aria-hidden="true"><kbd class="kbd">Ctrl</kbd><kbd class="kbd">↵</kbd></span></button>
+            <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-block-action="copy"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="13" height="13" x="9" y="9" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>复制这一块</button>
+            <button type="button" role="menuitem" tabindex="-1" class="menu-item" data-block-action="copy-md"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>复制为 Markdown</button>
+            <div class="menu-sep" role="separator"></div>
+            <button type="button" role="menuitem" tabindex="-1" class="menu-item is-danger" data-block-action="delete"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>删除</button>
+        </div>
+        <div class="menu block-menu-sub" id="blockMenuConvert" role="menu" aria-label="转换为" hidden>
+            <button type="button" role="menuitemradio" tabindex="-1" class="menu-item" data-convert="p" aria-checked="false">正文<svg class="menu-tick" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></button>
+            <button type="button" role="menuitemradio" tabindex="-1" class="menu-item" data-convert="h1" aria-checked="false">标题 1<svg class="menu-tick" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></button>
+            <button type="button" role="menuitemradio" tabindex="-1" class="menu-item" data-convert="h2" aria-checked="false">标题 2<svg class="menu-tick" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></button>
+            <button type="button" role="menuitemradio" tabindex="-1" class="menu-item" data-convert="quote" aria-checked="false">引用<svg class="menu-tick" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></button>
+            <button type="button" role="menuitemradio" tabindex="-1" class="menu-item" data-convert="code" aria-checked="false">代码块<svg class="menu-tick" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></button>
+        </div>
+    </div>
+
+    <!-- Table toolbar (live mode): over the table being edited -->
+    <div class="popover float-bar" id="tableToolbar" role="toolbar" aria-label="表格" hidden>
+        <button type="button" class="tb" tabindex="-1" data-table="left" aria-label="左对齐" aria-pressed="false"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 6H3"/><path d="M15 12H3"/><path d="M17 18H3"/></svg></button>
+        <button type="button" class="tb" tabindex="-1" data-table="center" aria-label="居中" aria-pressed="false"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 6H3"/><path d="M17 12H7"/><path d="M19 18H5"/></svg></button>
+        <button type="button" class="tb" tabindex="-1" data-table="right" aria-label="右对齐" aria-pressed="false"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 6H3"/><path d="M21 12H9"/><path d="M21 18H7"/></svg></button>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <button type="button" class="tb" tabindex="-1" data-table="row" aria-label="在下方插入行"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="12" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M12 17v5"/><path d="M9.5 19.5h5"/></svg></button>
+        <button type="button" class="tb" tabindex="-1" data-table="column" aria-label="在右侧插入列"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="12" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="M17 12h5"/><path d="M19.5 9.5v5"/></svg></button>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <button type="button" class="tb tb-danger" tabindex="-1" data-table="delete" aria-label="删除表格"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+    </div>
     <div class="float-tip" id="floatTip" aria-hidden="true" hidden></div>
+
+    <!-- Short confirmations (e.g. after copying a block) -->
+    <div class="toast" id="toast" role="status"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg><span id="toastText"></span></div>
 
     <input type="file" id="fileInput" accept=".md,.markdown,.mdown,.txt,text/markdown,text/plain" hidden>
 
@@ -298,10 +334,12 @@
     <script src="assets/js/markdown.js"></script>
     <script src="assets/js/syntax.js"></script>
     <script src="assets/js/editor.js"></script>
+    <script src="assets/js/table.js"></script>
     <script src="assets/js/live.js"></script>
     <script src="assets/js/commands.js"></script>
     <script src="assets/js/popover.js"></script>
     <script src="assets/js/live-tools.js"></script>
+    <script src="assets/js/live-blocks.js"></script>
     <script src="assets/js/app.js"></script>
 </body>
 </html>

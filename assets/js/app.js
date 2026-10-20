@@ -66,9 +66,15 @@
         scroller: liveScroll,
         editor,
         onCaret: handleLiveCaret,
-        onRender: scheduleActiveHeading,
+        onRender: () => {
+            scheduleActiveHeading();
+            liveBlocks.refresh();
+        },
         onSlash: (query, el) => liveTools.slash(query, el),
-        onSelection: () => liveTools.selection(),
+        onSelection: () => {
+            liveTools.selection();
+            liveBlocks.refresh();
+        },
         onKey: (key) => liveTools.key(key)
     });
     // The slash menu and the toolbar over selected text
@@ -77,7 +83,19 @@
         scroller: liveScroll,
         slashMenu: $('slashMenu'),
         toolbar: inlineToolbar,
+        tableBar: $('tableToolbar'),
         tip: $('floatTip')
+    });
+    // The handle beside each block and its menu
+    const liveBlocks = MDE.createLiveBlocks({
+        live,
+        root: liveDoc,
+        scroller: liveScroll,
+        handle: $('blockHandle'),
+        dropLine: $('dropLine'),
+        menu: $('blockMenu'),
+        copy: copyText,
+        toast: showToast
     });
 
     // ========================================================================
@@ -256,13 +274,7 @@
         const block = button.closest('.code-block');
         const input = block.querySelector('textarea');
         const code = input ? input.value : block.querySelector('code').textContent;
-        let copied = false;
-        try {
-            await navigator.clipboard.writeText(code);
-            copied = true;
-        } catch (err) {
-            copied = legacyCopy(code);
-        }
+        const copied = await copyText(code);
         const label = button.querySelector('span');
         label.textContent = copied ? '已复制' : '复制失败';
         button.classList.toggle('is-copied', copied);
@@ -270,6 +282,35 @@
             label.textContent = '复制';
             button.classList.remove('is-copied');
         }, 1600);
+    }
+
+    // Plain text, and optionally HTML for places that take formatted text
+    async function copyText(text, html) {
+        try {
+            if (html && window.ClipboardItem && navigator.clipboard.write) {
+                await navigator.clipboard.write([new ClipboardItem({
+                    'text/html': new Blob([html], { type: 'text/html' }),
+                    'text/plain': new Blob([text], { type: 'text/plain' })
+                })]);
+            } else {
+                await navigator.clipboard.writeText(text);
+            }
+            return true;
+        } catch (err) {
+            return legacyCopy(text);
+        }
+    }
+
+    // A short confirmation at the bottom of the window, gone after 1.6 s
+    let toastTimer = 0;
+
+    function showToast(message, ok = true) {
+        const toast = $('toast');
+        $('toastText').textContent = message;
+        toast.classList.toggle('is-error', !ok);
+        toast.classList.add('is-shown');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove('is-shown'), 1600);
     }
 
     function legacyCopy(text) {
@@ -748,7 +789,8 @@
     function run(name, el) {
         const action = actions[name];
         if (!action) return;
-        if (state.view === 'live' && EDIT_COMMANDS.has(name)) live.beforeCommand();
+        // In live mode a command can be refused (whole-line formats in a table cell)
+        if (state.view === 'live' && EDIT_COMMANDS.has(name) && !live.beforeCommand(name)) return;
         action(el || {});
     }
 
