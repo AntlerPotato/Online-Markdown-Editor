@@ -7,6 +7,8 @@
     /* Accent */
     --accent: #2E7C84;
     --accent-soft: color-mix(in oklab, var(--accent) 9%, transparent);
+    --accent-soft-strong: color-mix(in oklab, var(--accent) 18%, transparent); /* the current annotation */
+    --accent-mid: color-mix(in oklab, var(--accent) 45%, transparent);
     --accent-tint: color-mix(in oklab, var(--accent) 18%, var(--surface));
     --accent-ring: color-mix(in oklab, var(--accent) 22%, transparent);
     --on-accent: #FFFFFF;           /* text on a solid accent background */
@@ -52,6 +54,7 @@
     --link: #1F5F66;
     --link-hover: #123E43;
     --warm: #A0582E;
+    --warm-soft: color-mix(in oklab, var(--warm) 11%, transparent);
     --number: #6F4FB0;
     --mark-bg: #F6E7A6;
     --mark-fg: inherit;
@@ -112,6 +115,8 @@
 :root[data-theme="dark"] {
     --accent: #5FB3BB;
     --accent-soft: color-mix(in oklab, var(--accent) 12%, transparent);
+    --accent-soft-strong: color-mix(in oklab, var(--accent) 22%, transparent);
+    --accent-mid: color-mix(in oklab, var(--accent) 50%, transparent);
     --accent-ring: color-mix(in oklab, var(--accent) 26%, transparent);
     --on-accent: #0E1213;
 
@@ -151,6 +156,7 @@
     --link: #7CC6CD;
     --link-hover: #A9DDE2;
     --warm: #E2A77D;
+    --warm-soft: color-mix(in oklab, var(--warm) 14%, transparent);
     --number: #B8A3F0;
     --mark-bg: #4F4418;
     --mark-fg: #F6E8B8;

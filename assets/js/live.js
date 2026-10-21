@@ -199,6 +199,12 @@
         });
     };
 
+    // The document's blocks and their kinds, for finding an annotated
+    // passage in the rendered preview
+    MDE.blocksOf = function (text) {
+        return split(text).list.map((item) => ({ start: item.start, end: item.end, kind: kindOf(item.token, text.slice(item.start, item.end)).kind }));
+    };
+
     function isMathBlock(source) {
         const s = source.trim();
         return s.length > 4 && s.startsWith('$$') && s.endsWith('$$') && s.includes('\n') && !s.slice(2, -2).includes('$$');
@@ -2431,6 +2437,32 @@
             tableCommand(name) {
                 flush();
                 tableCommand(name);
+            },
+
+            // Annotations: the blocks that overlap [from, to) (where they
+            // are, their kind, source and element, how they show, and the
+            // open cell of a table being edited)…
+            blocksIn(from, to) {
+                const out = [];
+                if (!visible) return out;
+                for (let k = Math.max(0, countBefore(from + 1) - 1); k < blocks.length && blocks[k].start < to; k++) {
+                    const b = blocks[k];
+                    if (b.end <= from) continue;
+                    const cell = b.mode === 'table' && b.ui.cell ? { r: b.ui.cell.r, c: b.ui.cell.c } : null;
+                    out.push({ start: b.start, end: b.end, kind: b.kind, el: b.el, mode: b.mode, cell, source: sourceOf(b) });
+                }
+                return out;
+            },
+            // …and a range over the part of [from, to) in the source being
+            // edited (a block's, or a table cell's), null when none is
+            textRange(from, to) {
+                const b = active;
+                const src = textEditor(b);
+                if (!visible || !src || b.gap) return null;
+                const base = textBase(b);
+                const start = Math.max(from, base) - base;
+                const end = Math.min(to, base + src.textContent.length) - base;
+                return start < end ? rangeIn(src, start, end) : null;
             },
 
             // The block handle: blocks are named by their element

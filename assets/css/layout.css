@@ -273,6 +273,52 @@
     background: var(--border);
 }
 
+/* The annotation panel's tab at the right end of the row, with the count */
+.tab-btn {
+    height: 30px;
+    margin-left: auto;
+    padding: 0 10px;
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    gap: 7px;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tab-btn:hover {
+    background: var(--hover-strong);
+    color: var(--text);
+}
+
+.tab-btn[aria-pressed="true"] {
+    background: var(--surface);
+    border-color: var(--border);
+    color: var(--text);
+    box-shadow: var(--shadow-segment);
+}
+
+.badge {
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 99px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
 /* --- Top bar actions ----------------------------------------------------- */
 
 .header-actions {
@@ -540,8 +586,9 @@
     box-shadow: var(--shadow-card);
 }
 
-/* Under the top bar: the outline, then the panes */
+/* Under the top bar: the outline, the panes, the annotations */
 .card-body {
+    position: relative;
     flex: 1;
     min-height: 0;
     display: flex;
@@ -657,6 +704,303 @@
 
 .sidebar-foot svg {
     margin-top: 2px;
+}
+
+/* --- Annotations ------------------------------------------------------------ */
+/* Beside the document on the right; over it when there is no room for both
+   (annotate.js decides), on narrow windows and phones */
+
+.ann-panel {
+    width: 372px;
+    flex: none;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--border-soft);
+    background: var(--surface-sunken);
+}
+
+.ann-panel.is-overlay {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 6;
+    box-shadow: var(--shadow-pop);
+}
+
+.ann-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 10px 10px 16px;
+}
+
+.ann-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-strong);
+}
+
+.ann-counts {
+    font-size: 12.5px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.ann-mini {
+    width: 28px;
+    height: 28px;
+    flex: none;
+    padding: 0;
+    display: inline-grid;
+    place-items: center;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.ann-mini:hover {
+    background: var(--hover-strong);
+    color: var(--text);
+}
+
+.ann-close {
+    margin-left: auto;
+}
+
+@media (pointer: coarse) {
+    .ann-mini {
+        width: 36px;
+        height: 36px;
+    }
+}
+
+.ann-tabs {
+    flex: none;
+    padding: 0 12px 10px;
+}
+
+.ann-tabs .segmented > button {
+    flex: 1;
+}
+
+.ann-list {
+    position: relative;   /* offsetParent of the entries, for scrolling them into view */
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    margin: 0;
+    padding: 0 8px 8px;
+    list-style: none;
+}
+
+.ann-item {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    column-gap: 10px;
+    padding: 12px 10px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+}
+
+.ann-item + .ann-item {
+    margin-top: 2px;
+}
+
+.ann-item.is-current {
+    background: var(--surface);
+    border-color: var(--border);
+    box-shadow: var(--shadow-segment);
+}
+
+.ann-item > .ann-num {
+    min-width: 20px;
+    height: 20px;
+    margin-top: 2px;
+    font-size: 11px;
+}
+
+.ann-body {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* Where, the passage and the note: a click goes to the passage */
+.ann-go {
+    width: 100%;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: inherit;
+    text-align: left;
+}
+
+.ann-go[data-ann="none"] {
+    cursor: default;
+}
+
+.ann-where {
+    font-size: 11.5px;
+    color: var(--muted);
+}
+
+.ann-quote {
+    display: flex;
+    gap: 6px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--muted-2);
+}
+
+.ann-quote-icon {
+    margin-top: 3px;
+    color: var(--faint);
+}
+
+.ann-quote-text {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}
+
+.ann-text {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-strong);
+    overflow-wrap: anywhere;
+}
+
+.ann-foot-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.ann-status + .ann-mini {
+    margin-left: auto;
+}
+
+.ann-status {
+    height: 22px;
+    padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border-radius: 6px;
+    background: var(--hover-strong);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+/* Copied, and the text has been changed since (done) */
+.ann-status[data-status="changed"] {
+    background: var(--accent-soft);
+    color: var(--link);
+}
+
+/* Copied but not changed yet; or its text is gone */
+.ann-status[data-status="same"],
+.ann-status[data-status="gone"] {
+    background: var(--warm-soft);
+    color: var(--warm);
+}
+
+.ann-empty {
+    flex: 1;
+    margin: 0;
+    padding: 8px 18px;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--muted);
+}
+
+.ann-foot {
+    flex: none;
+    padding: 12px;
+    border-top: 1px solid var(--border-soft);
+}
+
+.btn-ink.ann-copy {
+    width: 100%;
+    height: 42px;
+}
+
+.btn-ink.ann-copy:disabled {
+    opacity: 0.4;
+    background: var(--ink);
+}
+
+.ann-note {
+    margin: 8px 4px 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--muted);
+}
+
+.ann-foot-history {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ann-foot-history .ann-note {
+    flex: 1;
+    margin: 0 4px;
+}
+
+.btn-tab:disabled {
+    opacity: 0.45;
+    cursor: default;
+    background: transparent;
+}
+
+/* An annotation's number: in the panel, in its dialog and before its
+   passage in the document (the number comes from CSS) */
+.ann-num {
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 99px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-family: var(--font-ui);
+    font-size: 10.5px;
+    font-style: normal;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0;
+    text-decoration: none;
+    text-indent: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.ann-num::before {
+    content: attr(data-n);
+}
+
+/* No number: its text is gone, or it was deleted (history) */
+.ann-num.is-muted {
+    background: var(--hover-strong);
+    color: var(--muted);
 }
 
 /* --- Typography settings --------------------------------------------------- */
@@ -1019,6 +1363,11 @@
     gap: 14px;
 }
 
+/* While text is selected: its size, in place of the block's kind */
+.status-selection:not([hidden]) + .status-chip {
+    display: none;
+}
+
 /* Block the caret is in (live mode) */
 .status-chip {
     height: 22px;
@@ -1033,6 +1382,11 @@
 
 .app:not([data-view="live"]) .status-chip {
     display: none;
+}
+
+.app[data-view="edit"] .status-selection,
+.app[data-view="split"] .status-selection {
+    display: inline-flex;
 }
 
 /* Switches: sync scrolling, typewriter, focus */
@@ -1153,6 +1507,19 @@
     .settings-panel {
         left: 10px;
         width: auto;
+    }
+
+    /* Over the document's right side, as tall as one pane */
+    .ann-panel,
+    .ann-panel.is-overlay {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: auto;
+        z-index: 6;
+        width: min(372px, 100%);
+        height: min(100%, 70vh);
+        box-shadow: var(--shadow-pop);
     }
 
     .panes {
@@ -1328,6 +1695,20 @@
 
     .settings-width {
         display: none;
+    }
+
+    /* Annotations: from the "more" menu, over all of the document */
+    .ann-tab {
+        display: none;
+    }
+
+    .ann-panel,
+    .ann-panel.is-overlay {
+        inset: 0;
+        width: auto;
+        height: auto;
+        border-left: 0;
+        box-shadow: none;
     }
 
     .card {

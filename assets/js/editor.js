@@ -290,7 +290,8 @@
                 render();
                 if (kind) record(kind, before);
                 if (!detached) ensureCaretVisible();
-                if (onChange) onChange();
+                // (what changed, for whoever follows passages of the text)
+                if (onChange) onChange({ start, end, length: text.length });
             },
 
             undo,

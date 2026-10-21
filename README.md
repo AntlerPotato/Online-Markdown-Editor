@@ -17,7 +17,7 @@ A lightweight Markdown editor that runs entirely in the browser. Write in live m
 
 **Source editing**
 - Editor with line numbers, Markdown syntax highlighting and current-line highlight
-- A two-row top bar: the logo opens the file menu (new, import, export), then the outline switch and the document's name, the command palette, the save state, view modes, typography settings, theme and export; the formatting tools are on the second row
+- A two-row top bar: the logo opens the file menu (new, import, export), then the outline switch and the document's name, the command palette, the save state, view modes, typography settings, theme and export; the formatting tools are on the second row, with the annotation panel's button at its end
 - Formatting tools: undo/redo, paragraph style (H1–H6), bold, italic, strikethrough, highlight, links, images, tables, code blocks, formulas, quotes, lists, task lists, table of contents, horizontal rules
 - On narrow windows the trailing tool groups move into a **⋯** (more) menu
 - Table picker (up to 6 × 8, with column alignment) and a link/image dialog
@@ -32,8 +32,9 @@ A lightweight Markdown editor that runs entirely in the browser. Write in live m
 - Live, source, split and preview views, with a draggable divider in the split view
 - An outline of the document's headings beside it, marking the section being edited (or read); click a heading to go to it
 - A command palette (`Ctrl+Shift+P`) with every command, found by its Chinese or English name or by pinyin
+- Annotations for revising with an AI: select text, choose **标注** on the selection toolbar (or `Ctrl+Alt+M`) and pick a phrase or write a note. Annotated text is tinted and numbered in the live view and the preview; the annotation panel lists them, and **复制全部标注** copies them all as text (section, line, the original Markdown and the change wanted) to paste into an AI chat. After copying, each one shows whether its text has changed since. Deleted ones stay in a history. Annotations are kept in the browser, never in the `.md` file
 - Typography settings: page width (presets, a slider, or drag the page's edges), Latin, Chinese and code fonts, and line spacing. A font is downloaded only once chosen; the settings are kept in the browser
-- Light and dark themes; the status bar holds the block type (in live mode), the caret position, word and line count, reading time, the typewriter, focus and sync-scroll switches and the font size
+- Light and dark themes; the status bar holds the block type (in live mode; the size of the selection while text is selected), the caret position, word and line count, reading time, the typewriter, focus and sync-scroll switches and the font size
 - Autosave in the browser, plus import and export of `.md` files. The save indicator next to the view switch names its state in its tooltip and stays expanded if saving fails
 
 ## Markdown extras
@@ -57,6 +58,7 @@ Standard GitHub-flavoured Markdown (tables, fenced code, strikethrough, autolink
 | Insert link | `Ctrl+K` | `⌘K` |
 | Undo | `Ctrl+Z` | `⌘Z` |
 | Redo | `Ctrl+Y` or `Ctrl+Shift+Z` | `⌘⇧Z` |
+| Annotate the selection | `Ctrl+Alt+M` | `⌘⌥M` |
 | Command palette | `Ctrl+Shift+P` | `⌘⇧P` |
 
 ## Getting started
@@ -91,7 +93,7 @@ There is nothing to install or build: edit the files, refresh the browser, then 
 
 ## Your data
 
-Documents are autosaved to your browser's `localStorage`. They never leave your device and are not synced anywhere. Clearing site data or using a private window removes them, so use **导出** (Export) to keep a `.md` copy of anything important.
+Documents are autosaved to your browser's `localStorage`. They never leave your device and are not synced anywhere. Clearing site data or using a private window removes them, so use **导出** (Export) to keep a `.md` copy of anything important. Annotations are kept the same way, beside the document; they are not part of the exported file.
 
 ## Project structure
 
@@ -116,6 +118,8 @@ assets/
     live.js             Live mode: splits the document into blocks, caches their HTML, edits one block at a time
     commands.js         Formatting commands (wrap, headings, lists, tables, links)
     popover.js          Menu and popover positioning and keyboard handling
+    annotations.js      Annotations without the page: following passages through edits, finding them in rendered text, the copied text
+    annotate.js         The annotation dialog, panel and marks in the document
     app.js              Wires everything together (including the toolbar overflow)
 docs/
   screenshot.png
