@@ -159,6 +159,11 @@
         toast: showToast,
         onLayout: () => relayout()
     });
+    // HTML blocks: links clicked in a frame open in a new tab; 编辑源码
+    MDE.htmlFrames.configure({
+        onOpen: (href) => window.open(href, '_blank', 'noopener'),
+        onEdit: (frame) => live.editFrame(frame)
+    });
 
     // ========================================================================
     // Document state
