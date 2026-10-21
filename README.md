@@ -2,19 +2,28 @@
 
 A lightweight Markdown editor that runs entirely in the browser. Write in live mode, where the block you are editing shows its Markdown and everything else stays rendered, or use the source, split and preview views. Math, code highlighting and a table of contents are built in. There is no build step and no server: open `index.html` and start writing.
 
-<img width="1440" height="900" alt="Markdown 编辑器界面：左侧预览，右侧编辑" src="docs/screenshot.png" />
+<img width="1440" height="900" alt="Markdown 编辑器的实时模式：左侧大纲，中间是排好版的文档，正在编辑的一块显示 Markdown 标记" src="docs/screenshot.png" />
 
 ## Features
 
 **Live mode (实时)**
 - The document is shown rendered; the block the caret is in shows its Markdown markers, keeping its size, weight and colour, and is rendered again as soon as the caret leaves it
 - Click a block to edit it there; the arrow keys move between blocks. Enter starts a new paragraph (or continues a list or quote), Shift+Enter adds a line break, Esc stops editing
-- Code blocks are edited in a code editor with line numbers and an editable language; formula blocks show a live preview under their LaTeX, and an inline formula shows one while the caret is in it
+- Type `/` on an empty line (or click the **+** beside it) for a menu of blocks to insert — headings, lists, quote, table, code, formula, HTML, table of contents — filtered as you type, in Chinese, English or pinyin
+- Select text for a toolbar above it: bold, italic, strikethrough, highlight, inline code, inline formula, link, clear formatting, and **标注**
+- A handle beside each block: drag it to move the block, or click it for a menu (turn it into a paragraph, heading, quote, list or code block; insert below; copy; copy as Markdown; delete). Ctrl+Enter opens an empty line below the block being edited
+- Tables are edited cell by cell: Tab and Enter move between cells and add a row at the end, the arrow keys cross cell edges, and a toolbar above the table sets the column's alignment, inserts rows and columns, or deletes the table
+- Hovering over a link, or putting the caret in it, shows a bubble to open, edit, copy or remove it; Ctrl+K edits the link the caret is in
+- Code blocks are edited in a code editor with line numbers; the language chip at its top left opens a searchable list of languages; formula blocks show a live preview under their LaTeX, and an inline formula shows one while the caret is in it
 - `html` code blocks run as web pages, in a frame sandboxed with only `allow-scripts`: their scripts work, but they can't reach the editor's page or its storage. A frame is made when it scrolls near the view and grows with its content (up to 80% of the view's height); its bottom-right corner has zoom (50–200%), full screen, **</>** to edit the code, and a grip to set the height by hand (double-click it to follow the content again). While the code is being edited, the 安全渲染 label says what the sandbox allows and 预览 shows the result under the code. The editor's colours are there as CSS variables (`var(--accent)`, `var(--text)` …) and follow the theme
 - Click a task's checkbox to tick it; Ctrl/⌘-click a link to open it
 - Typing `` ``` `` or `$$` on a line of its own and pressing Enter creates a code or formula block
 - 打字机 (typewriter) keeps the caret line in the middle of the screen; 专注 (focus) fades every block but the one being edited
 - Fast on long documents: only the edited block is re-rendered, rendered blocks are cached, and off-screen blocks skip layout
+
+**On phones**
+- A 60px top bar: the file menu, the file name and its save state, a switch between live and source, and a **⋯** menu with the other views, dark mode, the status bar's switches and font size, typography settings and the annotation panel
+- While a block is being edited, a row of buttons above the on-screen keyboard: insert a block (`/`), bold, italic, task list, link, undo, and hide the keyboard
 
 **Source editing**
 - Editor with line numbers, Markdown syntax highlighting and current-line highlight
@@ -58,11 +67,14 @@ Standard GitHub-flavoured Markdown (tables, fenced code, strikethrough, autolink
 |:--|:--|:--|
 | Bold | `Ctrl+B` | `⌘B` |
 | Italic | `Ctrl+I` | `⌘I` |
-| Insert link | `Ctrl+K` | `⌘K` |
+| Insert link (or edit the link the caret is in) | `Ctrl+K` | `⌘K` |
+| Paragraph / heading 1–6 | `Ctrl+0` / `Ctrl+1`–`Ctrl+6` | `⌘0` / `⌘1`–`⌘6` |
 | Undo | `Ctrl+Z` | `⌘Z` |
 | Redo | `Ctrl+Y` or `Ctrl+Shift+Z` | `⌘⇧Z` |
 | Annotate the selection | `Ctrl+Alt+M` | `⌘⌥M` |
 | Command palette | `Ctrl+Shift+P` | `⌘⇧P` |
+| Live mode: an empty line below the block | `Ctrl+Enter` | `⌘↩` |
+| Live mode: stop editing the block | `Esc` | `Esc` |
 
 ## Getting started
 
@@ -101,16 +113,16 @@ Documents are autosaved to your browser's `localStorage`. They never leave your 
 ## Project structure
 
 ```
-index.html              App markup: top bar, toolbar, panes, status bar, popovers
+index.html              App markup: top bar, toolbar, outline, panes, panels, status bar, popovers
 assets/
   css/
     tokens.css          Design tokens (colours, fonts, radii, shadows), light and dark
     base.css            Reset and shared controls (buttons, segmented control, inputs)
-    layout.css          App shell: stage, top bar, toolbar, save state, card, panes, splitter, status bar
-    menus.css           Menus (file, paragraph style, more tools), table picker, link dialog
+    layout.css          App shell: stage, card, top bar, toolbar, outline, typography settings, panes, splitter, annotation panel, status bar, phone layout
+    menus.css           Menus and popovers: file, paragraph style, more tools, phone menu, table picker, link dialog, slash menu, floating toolbars, block menu, link bubble, language menu, command palette, annotation dialog, toast
     editor.css          Source editor (transparent textarea over a highlighted backdrop)
-    preview.css         Rendered Markdown, code theme, KaTeX tweaks
-    live.css            Live mode: blocks, the block being edited, code and formula editors
+    preview.css         Rendered Markdown, code theme, KaTeX tweaks, HTML block frames, annotation marks
+    live.css            Live mode: blocks, the block being edited, code, formula and table editing, block handles
   js/
     store.js            Safe localStorage wrapper (settings and autosave)
     typography.js       Typography settings (page width, fonts, line spacing), applied before the first paint
