@@ -359,17 +359,23 @@
         }
 
         // link: where it is in the source (null when it can't be found
-        // there: then it can only be opened and copied)
-        function showLink(shown, link, address, rects) {
+        // there: then it can only be opened and copied). href: the address
+        // it opens; one that could run script (javascript:) isn't opened.
+        function showLink(shown, link, address, href, rects) {
             linkShown = shown;
             linkAddress.textContent = address;
             linkAddress.title = address;
             linkButton('open').setAttribute('aria-label', address.startsWith('#') ? '跳到文中位置' : '在新标签页打开');
+            linkButton('open').setAttribute('aria-disabled', String(!MDE.markdown.safeUrl(href)));
             linkButton('edit').setAttribute('aria-disabled', String(!link));
             linkButton('unlink').setAttribute('aria-disabled', String(!link || MDE.links.unlink(link) === null));
             linkBubble.hidden = false;
             placeLink(rects);
         }
+
+        // The caret's link opens what the rendered link would: its href as
+        // the browser reads the attribute ("&amp;" is "&")
+        const caretHref = (link) => MDE.markdown.attrValue(link.href);
 
         function hideLink() {
             clearTimeout(lingerTimer);
@@ -386,7 +392,7 @@
                 hideLink();
             }
             const link = dragging ? null : live.caretLink();
-            if (link && link.rects.length) showLink({ caret: true }, link, link.url, link.rects);
+            if (link && link.rects.length) showLink({ caret: true }, link, link.url, caretHref(link), link.rects);
             else hideLink();
         }
 
@@ -397,7 +403,7 @@
             const rects = a.isConnected ? Array.from(a.getClientRects()) : [];
             if (busy || !rects.length || document.body.classList.contains('is-dragging-block')) return;
             const link = live.linkOf(a);
-            showLink({ a }, link, link ? link.url : a.getAttribute('href'), rects);
+            showLink({ a }, link, link ? link.url : a.getAttribute('href'), a.getAttribute('href'), rects);
         }
 
         // The mouse left the link and the bubble: back to the caret's link
@@ -468,7 +474,7 @@
             }
             const action = button.dataset.link;
             if (action === 'open') {
-                const href = a ? a.getAttribute('href') : link.href;
+                const href = a ? a.getAttribute('href') : caretHref(link);
                 if (href !== null) links.open(href);
             } else if (action === 'copy') {
                 links.copy(link ? link.url : a.getAttribute('href'));

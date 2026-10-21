@@ -576,9 +576,7 @@
                 const ids = [];
                 if (entry) {
                     entry.headings.forEach((h) => {
-                        let id = h.baseId;
-                        if (used[id]) id = `${id}-${used[id]++}`;
-                        else used[id] = 1;
+                        const id = markdown.uniqueId(h.baseId, used);
                         ids.push(id);
                         list.push({ level: h.level, id, label: h.label });
                     });

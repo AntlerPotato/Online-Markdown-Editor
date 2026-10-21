@@ -3,6 +3,9 @@
 // (see loader.js). Until they arrive, code is shown unhighlighted and
 // formulas as their TeX source; render() reports which library it was
 // waiting for, and the caller renders again once it has loaded.
+// HTML written in the document is cleaned with DOMPurify, and links only
+// get addresses that can't run script (see "Addresses" and "HTML written in
+// the document").
 (function (MDE) {
     const ICON_COPY = '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="13" height="13" rx="2.5"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>';
     const ICON_TOC = '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M8 12h12"/><path d="M8 18h12"/></svg>';
@@ -41,6 +44,207 @@
         return count;
     }
 
+    // --- Ids ------------------------------------------------------------------
+
+    // Ids of the editor's own elements (its code looks them up by id), and
+    // of the options its menus make later (code languages, commands)
+    const APP_IDS = new Set(Array.from(document.querySelectorAll('[id]'), (el) => el.id));
+    const isAppId = (id) => APP_IDS.has(id) || /^(?:lang-\d+|cmd-.+)$/.test(id);
+
+    // A heading's id, unique in the document. The editor's ids count as
+    // taken, so a heading "Toast" is #toast-1 (and a link to #toast finds it,
+    // see app.js): two elements with one id would mix up the editor's code.
+    function uniqueId(base, used) {
+        if (!used[base] && isAppId(base)) used[base] = 1;
+        if (used[base]) return `${base}-${used[base]++}`;
+        used[base] = 1;
+        return base;
+    }
+
+    // --- Addresses ------------------------------------------------------------
+
+    // Links get http, https, mailto and tel addresses, #ids and relative
+    // paths; anything else (javascript:, data:, …) leaves plain text. Images
+    // may also be data: URIs. This is DOMPurify's own test, so the HTML of a
+    // document gets the same rule, and it is made on the address as the
+    // browser reads it (spaces and control characters dropped).
+    const SAFE_URL = /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i;
+    const URL_SPACE = /[\u0000-\u0020\u00A0\u1680\u180E\u2000-\u2029\u205F\u3000]/g;
+
+    function safeUrl(url, image = false) {
+        const value = String(url).replace(URL_SPACE, '');
+        return SAFE_URL.test(value) || (image && /^data:/i.test(value));
+    }
+
+    // An address as written into an attribute, as the browser reads it back:
+    // character references are decoded ("&#106;avascript:" is "javascript:")
+    const attrProbe = document.createElement('template');
+
+    function attrValue(raw) {
+        if (!raw.includes('&')) return raw;
+        attrProbe.innerHTML = '<a href="' + raw.replace(/"/g, '&quot;') + '"></a>';
+        return attrProbe.content.firstChild.getAttribute('href');
+    }
+
+    // What marked writes into href / src (its cleanUrl); null: no link at all
+    function writtenUrl(href) {
+        try {
+            return encodeURI(href).replace(/%25/g, '%');
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // --- HTML written in the document -------------------------------------------
+
+    // marked passes HTML through as written. DOMPurify takes out what could
+    // run script (<script>, onerror=…, javascript: links), leave the page
+    // (forms, <meta> refresh), restyle or cover the editor (<style>,
+    // position: fixed, the top layer) or act as the editor (frames of this
+    // site). Only the top-level blocks that hold HTML are cleaned: cleaning a
+    // long document whole takes longer than rendering it. Without DOMPurify
+    // (it didn't load), HTML is shown as text.
+    const purifier = window.DOMPurify && typeof window.DOMPurify.sanitize === 'function' ? window.DOMPurify(window) : null;
+
+    // Features a frame's allow="…" may give the embedded page. Not the
+    // camera, microphone or location: the browser would ask for them in the
+    // editor's name.
+    const FRAME_FEATURES = new Set(['autoplay', 'encrypted-media', 'fullscreen', 'picture-in-picture', 'accelerometer', 'gyroscope', 'clipboard-write', 'web-share']);
+    const FRAME_SANDBOX = 'allow-scripts allow-same-origin allow-popups allow-presentation';
+    const MATH_ONLY = /^\s*(?:<!--MATH_BLOCK_\d+-->\s*)+$/;
+    const MATH_COMMENT = /<!--MATH_BLOCK_\d+-->/g;
+
+    // Frames show other sites' pages (videos, maps). With allow-same-origin
+    // a page of this site would run as the editor, so those are dropped,
+    // and so is srcdoc.
+    function frameAllowed(src) {
+        if (!src) return false;
+        try {
+            const url = new URL(src, document.baseURI);
+            return (url.protocol === 'https:' || url.protocol === 'http:') && url.origin !== location.origin;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // position: fixed / sticky in a style attribute is dropped (it would pin
+    // the text over the editor); the rest stays as written
+    const styleProbe = document.createElement('div');
+    const headingIds = new WeakMap();
+
+    function unpinned(css) {
+        styleProbe.style.cssText = css;
+        const position = styleProbe.style.getPropertyValue('position').trim().toLowerCase();
+        if (!position || position === 'static' || position === 'relative' || position === 'absolute') return css;
+        styleProbe.style.removeProperty('position');
+        return styleProbe.style.cssText;
+    }
+
+    if (purifier) {
+        purifier.setConfig({
+            FORCE_BODY: true,
+            ALLOWED_URI_REGEXP: SAFE_URL,
+            ADD_TAGS: ['iframe'],
+            ADD_ATTR: ['allow', 'allowfullscreen', 'frameborder'],   // on frames only (below)
+            FORBID_TAGS: ['style', 'form', 'meta', 'base', 'link', 'object', 'embed', 'frame', 'frameset'],
+            // Popovers and dialogs opened by a button would sit in the
+            // browser's top layer, above the whole editor
+            FORBID_ATTR: ['popover', 'popovertarget', 'popovertargetaction', 'command', 'commandfor']
+        });
+        // (Hooks on whole nodes only: with hooks on single attributes,
+        // DOMPurify copies its lists on every call, 0.3 ms a block.)
+        purifier.addHook('beforeSanitizeElements', (node) => {
+            if (node.nodeName === 'IFRAME' && !frameAllowed(node.getAttribute('src'))) node.remove();
+        });
+        purifier.addHook('beforeSanitizeAttributes', (node) => {
+            if (node.nodeType !== 1) return;
+            const id = node.getAttribute('id');
+            if (id !== null && isAppId(id.trim())) node.removeAttribute('id');
+            // DOMPurify drops ids named like a property of document (a
+            // heading "Title" is #title); on headings they are put back
+            else if (id !== null && /^H[1-6]$/.test(node.nodeName) && !/[<>]/.test(id)) headingIds.set(node, id);
+            const label = node.getAttribute('for');
+            if (label !== null && isAppId(label.trim())) node.removeAttribute('for');
+            const style = node.getAttribute('style');
+            if (style !== null) {
+                const kept = unpinned(style);
+                if (kept !== style) node.setAttribute('style', kept);
+            }
+            if (node.nodeName === 'IFRAME') {
+                // srcdoc would run as the editor; a frame's name would be a
+                // global of the page (window.katex)
+                node.removeAttribute('srcdoc');
+                node.removeAttribute('name');
+                const allow = node.getAttribute('allow');
+                const kept = allow && allow.split(';').map((item) => item.trim())
+                    .filter((item) => FRAME_FEATURES.has(item.split(/\s+/)[0].toLowerCase())).join('; ');
+                if (kept) node.setAttribute('allow', kept);
+                else node.removeAttribute('allow');
+            } else {
+                node.removeAttribute('allow');
+                node.removeAttribute('allowfullscreen');
+                node.removeAttribute('frameborder');
+            }
+        });
+        purifier.addHook('afterSanitizeAttributes', (node) => {
+            if (headingIds.has(node)) node.setAttribute('id', headingIds.get(node));
+            if (node.nodeName !== 'IFRAME') return;
+            node.setAttribute('sandbox', FRAME_SANDBOX);
+            node.setAttribute('loading', 'lazy');
+            node.setAttribute('referrerpolicy', 'no-referrer');
+        });
+    }
+
+    // While a document with HTML is cleaned, what must not go through
+    // DOMPurify waits in slots: the blocks without HTML, and (in the blocks
+    // with HTML) formulas and HTML-block frames. DOMPurify would drop the
+    // formulas' comments and the frames' data-source (it holds </style>);
+    // both are ours, and KaTeX doesn't trust its input. The key is new on
+    // every page load, so a document can't write a slot of its own.
+    const SLOT_KEY = 's' + Math.random().toString(36).slice(2, 10);
+    const SLOT_RE = new RegExp(`<span data-mde-slot="${SLOT_KEY}-(\\d+)"></span>`, 'g');
+    let slots = null;
+    let inRawBlock = false;
+
+    function slot(html) {
+        return `<span data-mde-slot="${SLOT_KEY}-${slots.push(html) - 1}"></span>`;
+    }
+
+    // A formula inside a tag ($ in an attribute: title="$5 and $10") goes
+    // back to its text; other formulas wait in slots
+    function slotMath(html, math) {
+        return html.replace(MATH_COMMENT, (comment, at) => {
+            const before = html.slice(0, at);
+            if (before.lastIndexOf('<') <= before.lastIndexOf('>')) return slot(comment);
+            return escapeHtml(math[Number(comment.slice(15, -3))]);
+        });
+    }
+
+    // raw[i]: the top-level token i holds HTML; math: the formulas' source
+    function parseCleaned(tokens, raw, math) {
+        slots = [];
+        let skeleton = '';
+        let run = [];
+        const flush = () => {
+            if (run.length) skeleton += slot(marked.parser(run));
+            run = [];
+        };
+        tokens.forEach((token, i) => {
+            if (!raw[i]) {
+                run.push(token);
+                return;
+            }
+            flush();
+            inRawBlock = true;
+            skeleton += slotMath(marked.parser([token]), math);
+            inRawBlock = false;
+        });
+        flush();
+        const html = purifier.sanitize(skeleton).replace(SLOT_RE, (match, n) => slots[n]);
+        slots = null;
+        return html;
+    }
+
     // --- Renderer -----------------------------------------------------------
 
     const renderer = new marked.Renderer();
@@ -53,7 +257,7 @@
 
     // TeX → HTML; shows the source until KaTeX has loaded
     function renderMath(tex, displayMode) {
-        if (window.katex) {
+        if (MDE.loader.ready('katex')) {
             try {
                 return katex.renderToString(tex, { ...KATEX_OPTIONS, displayMode });
             } catch (e) {
@@ -70,7 +274,7 @@
     // is missing or unknown (the preview does; the live code editor doesn't).
     function highlightCode(source, language, auto = true) {
         if (PLAIN_LANGS.has(language) || (!language && !auto)) return { html: escapeHtml(source), language: '' };
-        if (!window.hljs) {
+        if (!MDE.loader.ready('hljs')) {
             if (needs) needs.code = true;
             else MDE.loader.request('hljs');
             return { html: escapeHtml(source), language: '' };
@@ -100,12 +304,7 @@
         const label = text.replace(/<(?!!--MATH_BLOCK_)[^>]*>/g, '');
         const plain = label.replace(/<!--MATH_BLOCK_\d+-->/g, '').replace(/&[#\w]+;/g, ' ');
         const baseId = plain.toLowerCase().replace(/[^\w\u4E00-\u9FA5]+/g, '-').replace(/^-+|-+$/g, '') || 'section';
-        let id = baseId;
-        if (usedIds[id]) {
-            id = `${id}-${usedIds[id]++}`;
-        } else {
-            usedIds[id] = 1;
-        }
+        const id = uniqueId(baseId, usedIds);
         headings.push({ level, id, baseId, label });
         return `<h${level} id="${id}">${text}</h${level}>\n`;
     };
@@ -119,7 +318,8 @@
         // ```html runs in a sandboxed frame (html-frames.js); live mode adds
         // the button that opens its source
         if (language.toLowerCase() === 'html' && MDE.htmlFrames) {
-            return MDE.htmlFrames.markup(code.replace(/\n$/, ''), { edit: interactiveTasks }) + '\n';
+            const frame = MDE.htmlFrames.markup(code.replace(/\n$/, ''), { edit: interactiveTasks }) + '\n';
+            return inRawBlock ? slot(frame) : frame;
         }
 
         const source = code.replace(/\n$/, '');
@@ -151,6 +351,26 @@
 
     renderer.checkbox = function (checked) {
         return `<input type="checkbox" class="task-check"${interactiveTasks ? '' : ' disabled'}${checked ? ' checked' : ''}>`;
+    };
+
+    // Links and images only with safe addresses (see "Addresses")
+    renderer.link = function (href, title, text) {
+        const url = writtenUrl(href);
+        if (url !== null && !safeUrl(attrValue(url))) return text;
+        return marked.Renderer.prototype.link.call(this, href, title, text);
+    };
+
+    renderer.image = function (href, title, text) {
+        const url = writtenUrl(href);
+        if (url !== null && !safeUrl(attrValue(url), true)) return text;
+        return marked.Renderer.prototype.image.call(this, href, title, text);
+    };
+
+    // HTML as written (cleaned in render()), or as text without DOMPurify
+    renderer.html = function (html, block) {
+        if (purifier || MATH_ONLY.test(html)) return html;
+        const text = escapeHtml(html).replace(/&lt;!--MATH_BLOCK_(\d+)--&gt;/g, '<!--MATH_BLOCK_$1-->');
+        return block ? `<p>${text}</p>\n` : text;
     };
 
     // Tables scroll inside a rounded wrapper
@@ -283,15 +503,24 @@
         const { text, blocks, shifts } = extractMath(source);
         const tokens = marked.lexer(text);
         // Addresses starting "www." that GFM links by themselves open over
-        // https (GFM says http)
-        marked.walkTokens(tokens, (token) => {
-            if (token.type === 'link' && /^www\./i.test(token.raw)) token.href = 'https://' + token.raw;
+        // https (GFM says http); and which top-level blocks hold HTML (the
+        // formulas' placeholders are comments, but ours). One block at a
+        // time: walkTokens joins arrays as it goes, slow on a long list.
+        const raw = tokens.map((top) => {
+            let found = false;
+            marked.walkTokens([top], (token) => {
+                if (token.type === 'link' && /^www\./i.test(token.raw)) token.href = 'https://' + token.raw;
+                else if (token.type === 'html' && !MATH_ONLY.test(token.raw)) found = true;
+            });
+            return found;
         });
         const headingLines = headingSourceLines(tokens, shifts);
-        let html = marked.parser(tokens);
+        let html = purifier && raw.includes(true) ? parseCleaned(tokens, raw, blocks) : marked.parser(tokens);
         const ownHeadings = headings;
         ownHeadings.forEach((item) => { item.label = restoreMath(item.label, blocks); });
 
+        // (The table of contents comes after cleaning: its labels are the
+        // headings' text with every tag taken out, and its ids are ours.)
         if (html.includes('[TOC]')) {
             const toc = buildToc(options.toc || ownHeadings);
             html = html
@@ -316,5 +545,5 @@
         return headingLines;
     }
 
-    MDE.markdown = { render, renderInto, renderMath, highlightCode, mathSpans, escapeHtml, ICON_COPY };
+    MDE.markdown = { render, renderInto, renderMath, highlightCode, mathSpans, escapeHtml, safeUrl, attrValue, isAppId, uniqueId, ICON_COPY };
 })(window.MDE = window.MDE || {});

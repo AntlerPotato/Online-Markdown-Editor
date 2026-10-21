@@ -354,14 +354,19 @@
     }
 
     // An in-page link (#id) scrolls to its target; others open in a new
-    // tab, keeping the editor open
+    // tab, keeping the editor open. An address that could run script
+    // (javascript:) isn't opened: rendered links never have one
+    // (markdown.js), but the caret's link is read from the source. A heading
+    // named like one of the editor's elements has "-1" on its id (#toast is
+    // #toast-1).
     function followLink(href, container, scroller) {
         if (href.startsWith('#')) {
             let id = href.slice(1);
             try { id = decodeURIComponent(id); } catch (err) { /* keep raw id */ }
-            const target = container.querySelector('#' + CSS.escape(id));
+            const target = container.querySelector('#' + CSS.escape(id))
+                || (MDE.markdown.isAppId(id) && container.querySelector('#' + CSS.escape(id + '-1')));
             if (target) scroller.scrollTo({ top: contentTop(target, scroller) - 16, behavior: 'smooth' });
-        } else {
+        } else if (MDE.markdown.safeUrl(href)) {
             window.open(href, '_blank', 'noopener');
         }
     }
