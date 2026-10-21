@@ -61,6 +61,8 @@ A lightweight Markdown editor that runs entirely in the browser. Write in live m
 
 Standard GitHub-flavoured Markdown (tables, fenced code, strikethrough, autolinks) works as usual. A single line break is kept as a line break.
 
+HTML written straight into the document (not in an `html` code block) is cleaned with [DOMPurify](https://github.com/cure53/DOMPurify) before it is shown: scripts, `onclick`-style attributes, `<style>`, forms, `<meta>` and `position: fixed` are taken out, and an `<iframe>` may only show another site (a video, a map), sandboxed. Links and images only get `http`, `https`, `mailto` and `tel` addresses (images also `data:`), in-page `#ids` and relative paths; a `javascript:` link stays plain text. For styled or interactive content, use an `html` code block.
+
 ## Keyboard shortcuts
 
 | Action | Windows / Linux | macOS |
@@ -87,7 +89,7 @@ python3 -m http.server 8000
 
 To deploy it, upload the folder to any static host (GitHub Pages, Netlify, Vercel, IPFS, etc.).
 
-Libraries (marked, highlight.js, KaTeX) and fonts load from CDNs, so the first visit needs an internet connection. highlight.js and KaTeX are fetched the first time a document needs them; offline, code shows unhighlighted and formulas as their TeX source.
+Libraries (marked, DOMPurify, highlight.js, KaTeX) and fonts load from CDNs, so the first visit needs an internet connection. Each library is pinned to a version with its hash (`integrity`), so the browser refuses a changed file. highlight.js and KaTeX are fetched the first time a document needs them; offline, code shows unhighlighted and formulas as their TeX source. If DOMPurify can't load, HTML in documents is shown as text.
 
 ## Working on the code
 
@@ -108,7 +110,7 @@ There is nothing to install or build: edit the files, refresh the browser, then 
 
 ## Your data
 
-Documents are autosaved to your browser's `localStorage`. They never leave your device and are not synced anywhere. HTML blocks run in sandboxed frames that can't read this storage (they can still load things from the internet, as any web page can). Clearing site data or using a private window removes them, so use **导出** (Export) to keep a `.md` copy of anything important. Annotations are kept the same way, beside the document; they are not part of the exported file.
+Documents are autosaved to your browser's `localStorage`. They never leave your device and are not synced anywhere. HTML blocks run in sandboxed frames that can't read this storage (they can still load things from the internet, as any web page can); other HTML in a document is cleaned, so it can't run script in the editor's page at all. Clearing site data or using a private window removes them, so use **导出** (Export) to keep a `.md` copy of anything important. Annotations are kept the same way, beside the document; they are not part of the exported file.
 
 ## Project structure
 
@@ -127,9 +129,9 @@ assets/
     store.js            Safe localStorage wrapper (settings and autosave)
     typography.js       Typography settings (page width, fonts, line spacing), applied before the first paint
     sample.js           Document shown on first visit
-    loader.js           Loads highlight.js and KaTeX on first use
+    loader.js           Loads highlight.js and KaTeX on first use, checking their hashes
     html-frames.js      HTML blocks: sandboxed frames, made near the view; height, zoom, full screen
-    markdown.js         Markdown → HTML (marked renderer, math, TOC)
+    markdown.js         Markdown → HTML (marked renderer, math, TOC); cleans HTML in documents (DOMPurify) and unsafe link addresses
     syntax.js           Markdown syntax highlighting for the editor
     editor.js           Editor component: backdrop, caret tracking, undo/redo; holds the document for every view
     table.js            Table text: cells, alignment, inserting rows and columns

@@ -24,8 +24,11 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap" media="print" onload="this.media='all'">
 
-    <!-- External Dependencies (highlight.js and KaTeX are loaded on first use by assets/js/loader.js) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
+    <!-- External Dependencies (highlight.js and KaTeX are loaded on first use by assets/js/loader.js).
+         integrity: the browser refuses a file that isn't exactly this version -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js" integrity="sha384-zbcZAIxlvJtNE3Dp5nxLXdXtXyxwOdnILY1TDPVmKFhl4r4nSUG1r8bcFXGVa4Te" crossorigin="anonymous"></script>
+    <!-- HTML written in a document is cleaned before it is shown (markdown.js) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.4.17/purify.min.js" integrity="sha384-P0JNneQf81HOl9VwNXK76cQ9VMD6Nfsnepxb0cCOg8+UzEdzgPHAPV4wVQrvYQSx" crossorigin="anonymous"></script>
 
     <!-- Typography settings (page width, fonts, line spacing), applied before the first paint -->
     <script src="assets/js/store.js"></script>

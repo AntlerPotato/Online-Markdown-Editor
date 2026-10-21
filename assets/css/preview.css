@@ -22,6 +22,11 @@
     line-height: var(--doc-line-height);
     color: var(--text-body);
     overflow-wrap: break-word;
+    /* HTML in the document that borrows a fixed position from the
+       editor's own classes (class="toast") stays inside the document's
+       scroll view instead of covering the top bar (markdown.js takes
+       position: fixed out of style attributes) */
+    contain: layout;
 }
 
 .markdown-preview > :first-child {
@@ -104,6 +109,13 @@
 .markdown-preview a:hover {
     color: var(--link-hover);
     text-decoration-color: currentColor;
+}
+
+/* <a> without an address (an anchor, or one whose javascript: address was
+   taken out) is plain text */
+.markdown-preview a:not([href]) {
+    color: inherit;
+    text-decoration: none;
 }
 
 .markdown-preview mark {
