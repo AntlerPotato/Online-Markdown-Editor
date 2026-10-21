@@ -89,11 +89,13 @@
         onRender: () => {
             scheduleActiveHeading();
             liveBlocks.refresh();
+            annotate.redraw();
         },
         onSlash: (query, el) => liveTools.slash(query, el),
         onSelection: () => {
             liveTools.selection();
             liveBlocks.refresh();
+            annotate.redraw();
         },
         onKey: (key) => liveTools.key(key)
     });
@@ -133,6 +135,30 @@
         copy: copyText,
         toast: showToast
     });
+    // Annotations: the panel beside the document, the dialog that makes
+    // one, and their marks in the live view and the preview
+    const annotate = MDE.createAnnotate({
+        editor,
+        live,
+        liveDoc,
+        liveScroll,
+        preview,
+        previewScroll,
+        textarea,
+        backdrop: $('editorBackdrop'),
+        panel: $('annotations'),
+        dialog: $('annotateDialog'),
+        tabButton: $('annotationsButton'),
+        view: () => state.view,
+        fileName: () => state.fileName,
+        phone: () => PHONE.matches,
+        narrow: () => NARROW.matches,
+        sidebar: () => outlineShown(),
+        focusText: () => focusEditor(),
+        copyText,
+        toast: showToast,
+        onLayout: () => relayout()
+    });
 
     // ========================================================================
     // Document state
@@ -147,12 +173,13 @@
         return cjk + words;
     }
 
-    function handleChange() {
+    function handleChange(change) {
         updateHistoryButtons();
         scheduleStats();
         schedulePreview();
         scheduleOutline();
         live.update();
+        annotate.changed(change);
         if (state.ready) scheduleSave();
     }
 
@@ -176,14 +203,27 @@
     function handleCaret({ line, col }) {
         state.caret = { line, col };
         showCaret();
+        showSelection();
         updateFormatState();
         markOutline();
+        annotate.caret();
     }
 
     // Live mode names the line only (the column is one of the source)
     function showCaret() {
         const { line, col } = state.caret;
         $('statusCaret').textContent = state.view === 'live' ? `第 ${line + 1} 行` : `第 ${line + 1} 行，第 ${col + 1} 列`;
+    }
+
+    // While text is selected, the status bar counts it (in place of the
+    // kind of block)
+    function showSelection() {
+        const chip = $('statusSelection');
+        const { start, end, value } = editor.getSelection();
+        const editing = state.view === 'edit' || state.view === 'split' || (state.view === 'live' && !!live.activeElement());
+        const words = editing && end > start ? countWords(value.slice(start, end)) : 0;
+        if (words) chip.textContent = `已选 ${words} 字`;
+        chip.hidden = !words;
     }
 
     // Live mode also names the kind of block the caret is in
@@ -247,6 +287,7 @@
         clearTimeout(previewTimer);
         state.previewDirty = false;
         state.headingLines = MDE.markdown.renderInto(preview, editor.getValue());
+        annotate.previewRendered();
         updateActiveHeading();
         syncScroll('editor');
     }
@@ -469,7 +510,9 @@
         // On phones the toolbar shows in some views only
         fitToolbar();
         showCaret();
+        showSelection();
         placeGuides();
+        annotate.redraw();
 
         // Live mode edits through the (hidden) source editor
         if (mode === 'live') {
@@ -625,6 +668,8 @@
     function saveNow() {
         clearTimeout(saveTimer);
         const ok = store.set('doc', { name: state.fileName, content: editor.getValue(), savedAt: Date.now() });
+        // (the annotations moved with the text)
+        annotate.save();
         setSaveState(ok ? 'saved' : 'error');
     }
 
@@ -634,6 +679,8 @@
 
     function newDocument() {
         if (editor.getValue() && !confirm('确定要新建文档吗？当前内容将会丢失。')) return;
+        // Its annotations go to the panel's history
+        annotate.archiveAll();
         setFileName(DEFAULT_NAME);
         live.stopEditing();
         editor.setValue('');
@@ -645,6 +692,7 @@
         if (!file) return;
         const reader = new FileReader();
         reader.onload = () => {
+            annotate.archiveAll();
             setFileName(file.name);
             live.stopEditing();
             editor.setValue(String(reader.result));
@@ -941,6 +989,7 @@
         setChecked('[data-command="toggle-sidebar"]', on);
         // (at start-up the document isn't there yet: made once it is)
         if (on && state.ready) updateOutline();
+        annotate.fit();
         relayout();
     }
 
@@ -1133,7 +1182,10 @@
         edge.addEventListener('pointercancel', end);
     });
 
-    window.addEventListener('resize', placeGuides);
+    window.addEventListener('resize', () => {
+        annotate.fit();
+        placeGuides();
+    });
 
     // ========================================================================
     // Command palette
@@ -1142,6 +1194,10 @@
     const iconOf = (selector) => document.querySelector(selector + ' svg');
     const MOD = IS_MAC ? '⌘' : 'Ctrl';
     const notPreview = () => state.view !== 'preview';
+    const hasSelection = () => {
+        const { start, end, value } = editor.getSelection();
+        return !!value.slice(start, end).trim();
+    };
     const HEADINGS = [1, 2, 3, 4, 5, 6].map((level) => ({
         id: 'h' + level,
         label: `标题 ${level}`,
@@ -1177,7 +1233,8 @@
         { id: 'toc', label: '目录', group: '插入', words: 'toc contents mulu ml', icon: iconOf('#toolbar [data-command="toc"]') },
         { id: 'hr', label: '分隔线', group: '插入', words: 'hr rule divider line fengexian fgx', icon: iconOf('#toolbar [data-command="hr"]') },
         { id: 'undo', label: '撤销', group: '编辑', words: 'undo chexiao cx', icon: iconOf('#toolbar [data-command="undo"]'), keys: [MOD, 'Z'], disabled: () => !editor.canUndo() },
-        { id: 'redo', label: '重做', group: '编辑', words: 'redo chongzuo cz', icon: iconOf('#toolbar [data-command="redo"]'), keys: [MOD, 'Y'], disabled: () => !editor.canRedo() }
+        { id: 'redo', label: '重做', group: '编辑', words: 'redo chongzuo cz', icon: iconOf('#toolbar [data-command="redo"]'), keys: [MOD, 'Y'], disabled: () => !editor.canRedo() },
+        { id: 'annotate', label: '添加标注', group: '编辑', words: 'annotate annotation comment note tianjiabiaozhu tjbz biaozhu bz pizhu', icon: iconOf('#inlineToolbar [data-command="annotate"]'), keys: [MOD, IS_MAC ? '⌥' : 'Alt', 'M'], disabled: () => !hasSelection() }
     ].map((c) => ({ edit: true, when: notPreview, run: () => run(c.id), ...c })).concat([
         ...[['live', '实时', 'live shishi ss'], ['edit', '源码', 'source code markdown yuanma ym'], ['split', '分栏', 'split side fenlan fl'], ['preview', '预览', 'preview read yulan yl']].map(([mode, label, words]) => ({
             id: 'view-' + mode,
@@ -1190,6 +1247,7 @@
             run: () => setView(mode)
         })),
         { id: 'sidebar', label: '大纲', group: '视图', words: 'outline sidebar headings dagang dg cebianlan', icon: iconOf('#sidebarToggle'), checked: () => state.sidebar, when: () => !NARROW.matches, run: () => setSidebar(!state.sidebar) },
+        { id: 'annotations', label: '标注面板', group: '视图', words: 'annotations comments panel biaozhumianban bzmb biaozhu bz', icon: iconOf('#annotationsButton'), checked: () => annotate.isOpen(), run: () => annotate.toggle() },
         { id: 'theme', label: '深色模式', group: '视图', words: 'dark theme night shensemoshi ssms zhuti', icon: iconOf('.theme-toggle'), checked: () => currentTheme() === 'dark', run: () => run('toggle-theme') },
         { id: 'typewriter', label: '打字机', group: '视图', words: 'typewriter dazijimoshi dzj', icon: iconOf('#phoneMenu [data-command="toggle-typewriter"]'), checked: () => state.typewriter, when: () => state.view === 'live', run: () => run('toggle-typewriter') },
         { id: 'focus', label: '专注', group: '视图', words: 'focus zhuanzhu zz', icon: iconOf('#phoneMenu [data-command="toggle-focus"]'), checked: () => state.focusMode, when: () => state.view === 'live', run: () => run('toggle-focus') },
@@ -1199,7 +1257,8 @@
         { id: 'font-dec', label: '缩小字号', group: '视图', words: 'font size smaller zoom out suoxiaozihao sxzh zihao', icon: '−', disabled: () => state.fontSize <= FONT_MIN, run: () => run('font-dec') },
         { id: 'new', label: '新建文档', group: '文件', words: 'new document file xinjian xj', icon: iconOf('#fileMenu [data-command="new"]'), run: () => run('new') },
         { id: 'import', label: '导入 Markdown 文件', group: '文件', words: 'import open file daoru dr', icon: iconOf('#fileMenu [data-command="import"]'), run: () => run('import') },
-        { id: 'export', label: '导出 Markdown 文件', group: '文件', words: 'export download save file daochu dc', icon: iconOf('#fileMenu [data-command="export"]'), run: () => run('export') }
+        { id: 'export', label: '导出 Markdown 文件', group: '文件', words: 'export download save file daochu dc', icon: iconOf('#fileMenu [data-command="export"]'), run: () => run('export') },
+        { id: 'copy-annotations', label: '复制全部标注', group: '文件', words: 'copy annotations clipboard ai fuzhiquanbubiaozhu fzqbbz fuzhi biaozhu bz', icon: iconOf('#annotationsCopy'), disabled: () => !annotate.copyCount(), run: () => annotate.copyAll() }
     ]);
 
     // Where focus was when the palette opened: the block being edited, the
@@ -1295,6 +1354,8 @@
         slash: quickSlash,
         'hide-keyboard': () => live.stopEditing(true),
         'toggle-sidebar': () => setSidebar(!state.sidebar),
+        annotate: (el) => annotate.start(el),
+        'toggle-annotations': () => annotate.toggle(),
         'toggle-settings': () => setSettingsOpen(settingsPanel.hidden),
         'open-settings': () => setSettingsOpen(true),
         'reset-typography': resetTypography,
@@ -1344,6 +1405,13 @@
     });
 
     function handleShortcut(e) {
+        // Ctrl+Alt+M (⌘⌥M): annotate the selection. On a Mac ⌥ changes
+        // the character, so there the key's place counts.
+        if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && !e.isComposing && (e.key.toLowerCase() === 'm' || (IS_MAC && e.code === 'KeyM'))) {
+            e.preventDefault();
+            run('annotate');
+            return;
+        }
         if (!(e.ctrlKey || e.metaKey) || e.altKey || e.isComposing) return;
         const key = e.key.toLowerCase();
         let name = null;
@@ -1528,6 +1596,7 @@
     if (NARROW.addEventListener) {
         NARROW.addEventListener('change', () => {
             updateOutline();
+            annotate.fit();
             placeGuides();
         });
     }
@@ -1535,7 +1604,7 @@
     if (IS_MAC) {
         document.querySelectorAll('.menu-kbd').forEach((el) => { el.textContent = el.textContent.replace('Ctrl+', '⌘'); });
         document.querySelectorAll('.kbd').forEach((el) => { el.textContent = el.textContent.replace(/^Ctrl(?= |$)/, '⌘'); });
-        document.querySelectorAll('[data-keys]').forEach((el) => { el.dataset.keys = el.dataset.keys.replace('Ctrl ', '⌘'); });
+        document.querySelectorAll('[data-keys]').forEach((el) => { el.dataset.keys = el.dataset.keys.replace('Ctrl ', '⌘').replace('Alt ', '⌥'); });
         document.querySelectorAll('[aria-keyshortcuts]').forEach((el) => {
             el.setAttribute('aria-keyshortcuts', el.getAttribute('aria-keyshortcuts').replace('Control+', 'Meta+'));
         });
@@ -1567,12 +1636,14 @@
     setView(state.view);
     state.ready = true;
     updateOutline();
+    annotate.load(editor.getValue());
 
     // highlight.js and KaTeX load on first use; render again once they arrive
     MDE.loader.onLoad(() => {
         state.previewDirty = true;
         if (state.view === 'split' || state.view === 'preview') renderPreview();
         live.refreshLibraries();
+        annotate.redraw();
     });
 
     // Web fonts change text metrics once they arrive (and later, when a

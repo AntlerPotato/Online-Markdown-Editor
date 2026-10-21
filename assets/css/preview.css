@@ -567,3 +567,30 @@
         padding: 20px 18px 36px;
     }
 }
+
+/* --- Annotations -------------------------------------------------------------- */
+/* Annotated passages (CSS Custom Highlight API, from annotate.js): a tint
+   and a line under them; the current one stronger. A number goes before
+   each passage. */
+
+::highlight(mde-ann) {
+    background-color: var(--accent-soft);
+    text-decoration: underline 2px var(--accent-mid);
+}
+
+::highlight(mde-ann-current) {
+    background-color: var(--accent-soft-strong);
+    text-decoration: underline 2px var(--accent);
+}
+
+.markdown-preview .ann-mark {
+    margin-right: 3px;
+    vertical-align: 0.45em;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.markdown-preview .ann-mark.is-current {
+    box-shadow: 0 0 0 2px var(--accent-ring);
+}
