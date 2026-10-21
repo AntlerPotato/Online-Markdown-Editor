@@ -18,8 +18,9 @@
     const MATHML = 'http://www.w3.org/1998/Math/MathML';
     const KEYS = /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? '⌘⌥M' : 'Ctrl+Alt+M';
     // Rendered parts whose text is not the document's (labels, line
-    // numbers, KaTeX's drawing of a formula: its TeX is in the MathML)
-    const SKIP = '.code-block-head, .line-numbers, .katex-html, .toc, .ann-mark, .lv-raw, .lv-media, script, style';
+    // numbers, KaTeX's drawing of a formula: its TeX is in the MathML; an
+    // HTML block's frame, whose text can't be reached)
+    const SKIP = '.code-block-head, .line-numbers, .katex-html, .toc, .ann-mark, .lv-raw, .lv-media, .html-block, script, style';
 
     const STATUS = { new: '未复制', gone: '原文已删除', same: '已复制 · 原文未改动', changed: '已复制 · 原文已改动' };
     const ICON = {
@@ -617,7 +618,7 @@
             if (mode === 'preview') {
                 const mark = drawnPreview && drawnPreview.ranges.find((r) => r.id === id);
                 if (mark) {
-                    const r = mark.range.getBoundingClientRect();
+                    const r = (mark.range || mark.badge).getBoundingClientRect();
                     const box = previewScroll.getBoundingClientRect();
                     previewScroll.scrollTo({ top: previewScroll.scrollTop + r.top - box.top - box.height * 0.3, behavior: 'smooth' });
                 }
@@ -771,15 +772,31 @@
 
         // The number before a passage (its text comes from CSS, so the
         // rendered text stays the document's)
-        function addBadge(range, n) {
+        function newBadge(n) {
             const badge = el('span', 'ann-num ann-mark');
             badge.dataset.n = String(n);
             badge.setAttribute('aria-hidden', 'true');
+            return badge;
+        }
+
+        function addBadge(range, n) {
+            const badge = newBadge(n);
             const at = range.cloneRange();
             at.collapse(true);
             at.insertNode(badge);
             range.setStartAfter(badge);
             return badge;
+        }
+
+        // A passage that starts in an HTML block: the text in the frame
+        // can't be tinted, so its number goes on the frame's top left
+        function frameMark(entry, frame, id, n) {
+            const box = frame && frame.querySelector('.html-marks');
+            if (!box) return;
+            const badge = newBadge(n);
+            box.appendChild(badge);
+            entry.ranges.push({ id, range: null, n, badge });
+            entry.badges.push(badge);
         }
 
         function unmark(entry) {
@@ -798,12 +815,14 @@
         // was rendered again
         function finishEntry(entry) {
             entry.ranges.forEach((mark) => {
-                if (mark.n) {
+                if (mark.n && mark.range) {
                     mark.badge = addBadge(mark.range, mark.n);
                     entry.badges.push(mark.badge);
                 }
             });
-            entry.ranges.forEach(({ range }) => entry.nodes.push(range.startContainer, range.endContainer));
+            entry.ranges.forEach(({ range }) => {
+                if (range) entry.nodes.push(range.startContainer, range.endContainer);
+            });
             entry.badges.forEach((badge) => entry.nodes.push(badge));
             return entry;
         }
@@ -813,6 +832,13 @@
         // being edited is source, marked with the rest of the source)
         function markBlock(b, pieces, key) {
             const entry = { key, source: b.source, ranges: [], badges: [], nodes: [] };
+            const frame = b.mode === 'rendered' && b.el.querySelector(':scope > .html-block');
+            if (frame) {
+                pieces.forEach((p) => {
+                    if (p.first) frameMark(entry, frame, p.id, p.n);
+                });
+                return finishEntry(entry);
+            }
             const indexes = new Map();
             const indexOf = (root) => {
                 if (!indexes.has(root)) indexes.set(root, textIndex(root));
@@ -845,7 +871,8 @@
         }
 
         // The preview: the whole document's visible text, each passage
-        // found as the same occurrence of its text there
+        // found as the same occurrence of its text there (HTML blocks are
+        // left out: their frames are listed instead)
         let docVisText = null;
         let docVis = null;
         function documentVisible(text) {
@@ -853,12 +880,17 @@
                 docVisText = text;
                 const chars = [];
                 const pos = [];
+                const frames = [];
                 MDE.blocksOf(text).forEach((b) => {
+                    if (b.html) {
+                        frames.push(b);
+                        return;
+                    }
                     const vis = visibleOf(text.slice(b.start, b.end), b.kind);
                     chars.push(vis.text);
                     vis.pos.forEach((p) => pos.push(b.start + p));
                 });
-                docVis = { text: chars.join(''), pos };
+                docVis = { text: chars.join(''), pos, frames };
             }
             return docVis;
         }
@@ -867,10 +899,17 @@
             const entry = { key, source: '', ranges: [], badges: [], nodes: [] };
             const vis = documentVisible(text);
             const index = textIndex(preview);
+            const frames = preview.querySelectorAll(':scope > .html-block');
             shown.forEach((o) => {
+                let n = o.n;
+                const k = vis.frames.findIndex((b) => b.start <= o.item.from && o.item.from < b.end);
+                if (k !== -1) {
+                    frameMark(entry, frames[k], o.item.id, n);
+                    n = 0;
+                }
                 const want = A.needle(vis, o.item.from, o.item.to);
                 const range = want && rangeAt(index, want);
-                if (range) entry.ranges.push({ id: o.item.id, range, n: o.n });
+                if (range) entry.ranges.push({ id: o.item.id, range, n });
             });
             return finishEntry(entry);
         }
@@ -942,7 +981,9 @@
             if (!MARKS) return;
             marks.clear();
             marksCurrent.clear();
-            const add = ({ id, range }) => (id === current ? marksCurrent : marks).add(range);
+            const add = ({ id, range }) => {
+                if (range) (id === current ? marksCurrent : marks).add(range);
+            };
             if (mode === 'live') {
                 drawn.forEach((entry) => entry.ranges.forEach(add));
                 editingRanges.forEach(add);
@@ -964,7 +1005,7 @@
                 const r = p ? null : document.caretRangeFromPoint(e.clientX, e.clientY);
                 const node = p ? p.offsetNode : r && r.startContainer;
                 const offset = p ? p.offset : r && r.startOffset;
-                const hit = node && entries().flatMap((entry) => entry.ranges).find(({ range }) => range.isPointInRange(node, offset));
+                const hit = node && entries().flatMap((entry) => entry.ranges).find(({ range }) => range && range.isPointInRange(node, offset));
                 id = hit ? hit.id : null;
             }
             if (id) setCurrent(id, true);

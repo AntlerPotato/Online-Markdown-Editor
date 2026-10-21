@@ -47,7 +47,7 @@
     let headings = [];
     let usedIds = Object.create(null);
     let needs = null;              // libraries the current render had to do without
-    let interactiveTasks = false;  // live mode lets task checkboxes be clicked
+    let interactiveTasks = false;  // live mode lets task checkboxes be clicked (and opens an HTML block's source)
 
     const PLAIN_LANGS = new Set(['text', 'txt', 'plain', 'plaintext']);
 
@@ -115,6 +115,11 @@
         const language = ((infostring || '').match(/^\S*/) || [''])[0];
         if (language === 'math') {
             return `<div class="math-block">$$${escapeHtml(code)}$$</div>\n`;
+        }
+        // ```html runs in a sandboxed frame (html-frames.js); live mode adds
+        // the button that opens its source
+        if (language.toLowerCase() === 'html' && MDE.htmlFrames) {
+            return MDE.htmlFrames.markup(code.replace(/\n$/, ''), { edit: interactiveTasks }) + '\n';
         }
 
         const source = code.replace(/\n$/, '');
@@ -303,9 +308,11 @@
         return result;
     }
 
+    // The preview: frames of HTML blocks that didn't change are kept
     function renderInto(element, source) {
         const { html, headingLines } = render(source);
-        element.innerHTML = html;
+        if (MDE.htmlFrames) MDE.htmlFrames.patch(element, html);
+        else element.innerHTML = html;
         return headingLines;
     }
 

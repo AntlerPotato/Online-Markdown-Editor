@@ -16,6 +16,7 @@
     const REBUILD_DELAY = 120;         // ms of quiet typing before the block structure is checked again
     const CODE_HIGHLIGHT_DELAY = 150;  // ms of quiet typing before a code block is highlighted again
     const MATH_PREVIEW_DELAY = 60;
+    const HTML_PREVIEW_DELAY = 400;    // ms of quiet typing before the HTML block's preview runs again
     const PLACEHOLDER = '输入 / 插入块，或直接开始写作';
 
     const HEADING_LABELS = ['一级标题', '二级标题', '三级标题', '四级标题', '五级标题', '六级标题'];
@@ -45,6 +46,7 @@
     const SLASH = /^[/、]([^\n]*)$/;
     const SLASH_KEYS = new Set(['/', '、']);
     const LEADING_TABS = /^( *)(\t+)/gm;
+    const ICON_SAFE = '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>';
 
     // Firefox before 136 has no plaintext-only; pasting and Enter are
     // handled here either way, so plain contenteditable is a fine fallback
@@ -200,10 +202,16 @@
     };
 
     // The document's blocks and their kinds, for finding an annotated
-    // passage in the rendered preview
+    // passage in the rendered preview (html: a ```html frame)
     MDE.blocksOf = function (text) {
-        return split(text).list.map((item) => ({ start: item.start, end: item.end, kind: kindOf(item.token, text.slice(item.start, item.end)).kind }));
+        return split(text).list.map((item) => {
+            const k = kindOf(item.token, text.slice(item.start, item.end));
+            return { start: item.start, end: item.end, kind: k.kind, html: k.kind === 'fence' && k.lang === 'html' };
+        });
     };
+
+    // ```html: shown in a sandboxed frame (html-frames.js)
+    const isHtml = (b) => b.kind === 'fence' && b.lang === 'html' && !!MDE.htmlFrames;
 
     function isMathBlock(source) {
         const s = source.trim();
@@ -258,6 +266,7 @@
     // scrollbar doesn't jump much while content-visibility skips it
     function estimateHeight(b, source) {
         const lines = source.split('\n').length;
+        if (isHtml(b)) return MDE.htmlFrames.estimate(partsOf(source).content) + 2;
         switch (b.kind) {
             case 'fence':
             case 'code':
@@ -439,7 +448,7 @@
         let rebuildTimer = 0;
         let selectionFrame = 0;
         let slash = null;          // the slash menu is open for this block element: { el }
-        const settings = { typewriter: false, focusMode: false };
+        const settings = { typewriter: false, focusMode: false, htmlPreview: false };
 
         const bubble = document.createElement('div');
         bubble.className = 'lv-bubble';
@@ -483,7 +492,7 @@
             switch (b.kind) {
                 case 'gap': return '空段落';
                 case 'heading': return HEADING_LABELS[b.depth - 1];
-                case 'fence': return `代码块 · ${b.lang || '纯文本'}`;
+                case 'fence': return isHtml(b) ? 'HTML 块' : `代码块 · ${b.lang || '纯文本'}`;
                 case 'code': return '代码块';
                 case 'math': return '公式块';
                 case 'list': return b.task ? '任务列表' : b.ordered ? '有序列表' : '无序列表';
@@ -540,6 +549,7 @@
             // Blocks that render to nothing (link definitions, comments) show their source
             b.el.innerHTML = entry.html.trim() ? entry.html : `<div class="lv-raw">${markdown.escapeHtml(source)}</div>`;
             if (b.ids) applyIds(b);
+            if (isHtml(b)) MDE.htmlFrames.attach(b.el, scroller);
         }
 
         function createBlock(desc) {
@@ -791,7 +801,9 @@
                 + '<div class="code-block-head">'
                 + '<button type="button" class="lv-lang" aria-haspopup="listbox" aria-expanded="false" aria-controls="langList"><span class="lv-lang-name"></span>'
                 + '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>'
+                + `<button type="button" class="lv-safe" aria-label="安全渲染：在沙箱 iframe 中运行，只允许脚本，读不到编辑器页面和本地存储">${ICON_SAFE}安全渲染<span class="lv-safe-more"> · 沙箱 · 仅允许脚本</span></button>`
                 + `<button type="button" class="code-copy" aria-label="复制代码">${markdown.ICON_COPY}<span>复制</span></button>`
+                + '<button type="button" class="lv-html-toggle" aria-pressed="false" aria-label="编辑时预览渲染结果">预览</button>'
                 + '</div>'
                 + '<div class="code-block-body"><div class="line-numbers" aria-hidden="true"></div>'
                 + '<div class="lv-code-area"><pre class="lv-code-view" aria-hidden="true"><code></code></pre>'
@@ -799,7 +811,11 @@
                 + '</div></div></div>';
             const ui = {
                 parts: partsOf(sourceOf(b)),
+                block: b.el.querySelector('.lv-code'),
                 lang: b.el.querySelector('.lv-lang'),
+                toggle: b.el.querySelector('.lv-html-toggle'),
+                preview: null,     // the HTML block's frame under the code, when 预览 is on
+                previewTimer: 0,
                 input: b.el.querySelector('.lv-code-input'),
                 view: b.el.querySelector('.lv-code-view code'),
                 numbers: b.el.querySelector('.line-numbers'),
@@ -808,8 +824,15 @@
                 count: 0,
                 timer: 0
             };
-            showLanguage(ui);
+            // The pill only explains; neither button takes focus from the code on a click
+            b.el.querySelector('.lv-safe').addEventListener('mousedown', (e) => e.preventDefault());
+            ui.toggle.addEventListener('mousedown', (e) => e.preventDefault());
+            ui.toggle.addEventListener('click', () => {
+                settings.htmlPreview = !settings.htmlPreview;
+                showHtmlPreview(ui);
+            });
             ui.input.value = ui.parts.content;
+            showLanguage(ui);
             ui.lineHeight = parseFloat(getComputedStyle(ui.input).lineHeight) || 24;
             b.mode = 'code';
             b.ui = ui;
@@ -870,8 +893,12 @@
             b.ui.parts = parts;
             if (b.ui.input.value !== parts.content) {
                 b.ui.input.value = parts.content;
-                if (b.mode === 'code') paintCode(b.ui);
-                else paintMath(b.ui);
+                if (b.mode === 'code') {
+                    paintCode(b.ui);
+                    queueHtmlPreview(b.ui);
+                } else {
+                    paintMath(b.ui);
+                }
             }
             if (b.mode === 'code') showLanguage(b.ui);
             if (b.mode === 'math') sizeMath(b.ui);
@@ -882,13 +909,45 @@
         const infoWord = (ui) => ui.parts.info.trim().split(/\s+/)[0] || '';
         const codeLanguage = (ui) => infoWord(ui).toLowerCase();
 
-        // The language chip at the top left (live-tools.js opens its menu)
+        // The language chip at the top left (live-tools.js opens its menu).
+        // An HTML block shows 安全渲染 and 预览 instead of 复制.
         function showLanguage(ui) {
             const lang = infoWord(ui);
             if (ui.lang.dataset.lang === lang) return;
             ui.lang.dataset.lang = lang;
             ui.lang.firstChild.textContent = lang || '纯文本';
             ui.lang.setAttribute('aria-label', `代码语言：${lang || '纯文本'}`);
+            ui.html = codeLanguage(ui) === 'html' && !!MDE.htmlFrames;
+            ui.block.classList.toggle('is-html', ui.html);
+            ui.input.setAttribute('aria-label', ui.html ? 'HTML 代码' : '代码');
+            showHtmlPreview(ui);
+        }
+
+        // 预览 (on for every HTML block until the page is reloaded): the
+        // rendered frame under the code, run again once typing pauses
+        function showHtmlPreview(ui) {
+            const on = ui.html && settings.htmlPreview;
+            ui.toggle.setAttribute('aria-pressed', String(on));
+            if (on && !ui.preview) {
+                const box = document.createElement('div');
+                box.className = 'lv-html-preview';
+                box.innerHTML = '<span class="lv-math-tag">预览</span>' + MDE.htmlFrames.markup(ui.input.value);
+                ui.block.appendChild(box);
+                ui.preview = box.querySelector('.html-block');
+                MDE.htmlFrames.attach(ui.preview, scroller);
+            } else if (!on && ui.preview) {
+                clearTimeout(ui.previewTimer);
+                ui.preview.parentNode.remove();
+                ui.preview = null;
+            }
+        }
+
+        function queueHtmlPreview(ui) {
+            if (!ui.preview) return;
+            clearTimeout(ui.previewTimer);
+            ui.previewTimer = setTimeout(() => {
+                if (ui.preview) MDE.htmlFrames.update(ui.preview, ui.input.value);
+            }, HTML_PREVIEW_DELAY);
         }
 
         // Another language for the code block being edited: the first word
@@ -1344,6 +1403,7 @@
                 b.el.remove();
             } else {
                 if (b.ui && b.ui.timer) clearTimeout(b.ui.timer);
+                if (b.ui && b.ui.previewTimer) clearTimeout(b.ui.previewTimer);
                 renderBlock(b);
                 refreshHeadings();
             }
@@ -2160,6 +2220,7 @@
             } else if (inInput(b, e.target)) {
                 if (b.mode === 'code') {
                     paintCodeQuickly(b.ui);
+                    queueHtmlPreview(b.ui);
                 } else {
                     sizeMath(b.ui);
                     clearTimeout(b.ui.timer);
@@ -2278,6 +2339,8 @@
             const el = e.target.closest('.lv-block');
             const b = el && byElement.get(el);
             if (b && b === active) return;
+            // An HTML block's frame is for using the HTML; its toolbar has 编辑源码
+            if (e.target.closest('.html-block')) return;
             const check = e.target.closest('input.task-check');
             if (check && b) {
                 e.preventDefault();
@@ -2463,6 +2526,20 @@
                 const start = Math.max(from, base) - base;
                 const end = Math.min(to, base + src.textContent.length) - base;
                 return start < end ? rangeIn(src, start, end) : null;
+            },
+
+            // The frame's 编辑源码: edit the HTML block, the caret at the
+            // start of its code (the block stays where it is on screen)
+            editFrame(frame) {
+                flush();
+                const b = blockOf(frame && frame.closest('.lv-block'));
+                if (!b || b.gap) return;
+                switchTo(b, true);
+                editing = true;
+                const at = b.mode === 'code' ? Math.min(b.start + b.ui.parts.open.length, b.end) : b.start;
+                editor.select(at, at);
+                applySelection();
+                revealCaret();
             },
 
             // The block handle: blocks are named by their element

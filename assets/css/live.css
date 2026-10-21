@@ -272,6 +272,94 @@
     box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
+/* An HTML block: 安全渲染 (opens up on hover to say what the sandbox
+   allows) and 预览 in place of 复制 */
+.lv-safe,
+.lv-html-toggle,
+.lv-code.is-html .code-copy {
+    display: none;
+}
+
+.lv-code.is-html .lv-safe {
+    display: inline-flex;
+}
+
+.lv-code.is-html .lv-html-toggle {
+    display: flex;
+}
+
+.lv-safe {
+    min-width: 0;
+    height: 24px;
+    margin: 0 auto 0 8px;
+    padding: 0 9px;
+    align-items: center;
+    gap: 5px;
+    overflow: hidden;
+    border: 0;
+    border-radius: 7px;
+    background: var(--accent-soft);
+    font-family: var(--font-ui);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    color: var(--link);
+    cursor: help;
+}
+
+.lv-safe svg {
+    flex: none;
+}
+
+.lv-safe-more {
+    display: none;
+}
+
+.lv-safe:hover,
+.lv-safe:focus-visible {
+    background: color-mix(in oklab, var(--accent) 16%, transparent);
+}
+
+.lv-safe:hover .lv-safe-more,
+.lv-safe:focus-visible .lv-safe-more {
+    display: inline;
+}
+
+.lv-html-toggle {
+    height: 32px;
+    flex: none;
+    padding: 0 10px;
+    align-items: center;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    font-size: 12.5px;
+    color: var(--text-soft);
+}
+
+.lv-html-toggle:hover {
+    background: var(--hover);
+}
+
+.lv-html-toggle[aria-pressed="true"] {
+    background: var(--pressed);
+    color: var(--text);
+}
+
+/* 预览: the frame under the code */
+.lv-html-preview {
+    position: relative;
+    padding-top: 28px;
+    border-top: 1px dashed var(--code-border);
+    background: var(--surface);
+}
+
+.markdown-preview .lv-html-preview .html-block {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+}
+
 .lv-code-area {
     position: relative;
     flex: 1;
@@ -372,6 +460,7 @@
     background: var(--surface);
 }
 
+/* The 预览 label (formula and HTML blocks) */
 .lv-math-tag {
     position: absolute;
     top: 8px;

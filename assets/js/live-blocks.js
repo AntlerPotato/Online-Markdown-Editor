@@ -117,7 +117,7 @@
             const range = document.createRange();
             let node;
             for (let n = 0; (node = walker.nextNode()) && n < 40; n++) {
-                if (!node.data.trim() || node.parentElement.closest('.katex-mathml, .line-numbers')) continue;
+                if (!node.data.trim() || node.parentElement.closest('.katex-mathml, .line-numbers, .html-block')) continue;
                 range.selectNodeContents(node);
                 const r = range.getClientRects()[0];
                 if (!r || !r.height) continue;
@@ -243,13 +243,21 @@
         }
 
         // Copy what the block shows (rich text, and its plain text), without
-        // the code block's buttons and line numbers
+        // the code block's buttons and line numbers (an HTML block: its code)
         function copyRendered(el, info) {
             const probe = document.createElement('div');
             probe.className = 'markdown-preview';
             probe.style.cssText = 'position: fixed; top: 0; left: -10000px; width: 720px;';
             probe.innerHTML = live.blockHtml(el);
             probe.querySelectorAll('.code-block-head, .line-numbers').forEach((node) => node.remove());
+            // An HTML block: its source, as code
+            probe.querySelectorAll('.html-block').forEach((node) => {
+                const pre = document.createElement('pre');
+                const code = document.createElement('code');
+                code.textContent = node.dataset.source || '';
+                pre.appendChild(code);
+                node.replaceWith(pre);
+            });
             document.body.appendChild(probe);
             const html = probe.innerHTML;
             probe.querySelectorAll('.katex-mathml').forEach((node) => node.remove());

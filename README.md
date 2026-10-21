@@ -10,6 +10,7 @@ A lightweight Markdown editor that runs entirely in the browser. Write in live m
 - The document is shown rendered; the block the caret is in shows its Markdown markers, keeping its size, weight and colour, and is rendered again as soon as the caret leaves it
 - Click a block to edit it there; the arrow keys move between blocks. Enter starts a new paragraph (or continues a list or quote), Shift+Enter adds a line break, Esc stops editing
 - Code blocks are edited in a code editor with line numbers and an editable language; formula blocks show a live preview under their LaTeX, and an inline formula shows one while the caret is in it
+- `html` code blocks run as web pages, in a frame sandboxed with only `allow-scripts`: their scripts work, but they can't reach the editor's page or its storage. A frame is made when it scrolls near the view and grows with its content (up to 80% of the view's height); its bottom-right corner has zoom (50–200%), full screen, **</>** to edit the code, and a grip to set the height by hand (double-click it to follow the content again). While the code is being edited, the 安全渲染 label says what the sandbox allows and 预览 shows the result under the code. The editor's colours are there as CSS variables (`var(--accent)`, `var(--text)` …) and follow the theme
 - Click a task's checkbox to tick it; Ctrl/⌘-click a link to open it
 - Typing `` ``` `` or `$$` on a line of its own and pressing Enter creates a code or formula block
 - 打字机 (typewriter) keeps the caret line in the middle of the screen; 专注 (focus) fades every block but the one being edited
@@ -25,6 +26,7 @@ A lightweight Markdown editor that runs entirely in the browser. Write in live m
 
 **Preview**
 - Math via KaTeX, code blocks via highlight.js (with line numbers and a copy button); both are downloaded only once a document contains a formula or a code block
+- `html` code blocks run in the same sandboxed frames; while you type in the split view, frames whose HTML didn't change keep running
 - `[TOC]` table of contents that marks the section you are reading
 - Synchronised scrolling between preview and source, anchored on headings
 
@@ -46,6 +48,7 @@ A lightweight Markdown editor that runs entirely in the browser. Write in live m
 | `$$` on its own lines around a formula | Block formula |
 | `[TOC]` on its own line | Table of contents |
 | `- [ ]` / `- [x]` | Task list |
+| A fenced code block in `html` | The HTML, run in a sandboxed frame |
 
 Standard GitHub-flavoured Markdown (tables, fenced code, strikethrough, autolinks) works as usual. A single line break is kept as a line break.
 
@@ -93,7 +96,7 @@ There is nothing to install or build: edit the files, refresh the browser, then 
 
 ## Your data
 
-Documents are autosaved to your browser's `localStorage`. They never leave your device and are not synced anywhere. Clearing site data or using a private window removes them, so use **导出** (Export) to keep a `.md` copy of anything important. Annotations are kept the same way, beside the document; they are not part of the exported file.
+Documents are autosaved to your browser's `localStorage`. They never leave your device and are not synced anywhere. HTML blocks run in sandboxed frames that can't read this storage (they can still load things from the internet, as any web page can). Clearing site data or using a private window removes them, so use **导出** (Export) to keep a `.md` copy of anything important. Annotations are kept the same way, beside the document; they are not part of the exported file.
 
 ## Project structure
 
@@ -110,14 +113,22 @@ assets/
     live.css            Live mode: blocks, the block being edited, code and formula editors
   js/
     store.js            Safe localStorage wrapper (settings and autosave)
+    typography.js       Typography settings (page width, fonts, line spacing), applied before the first paint
     sample.js           Document shown on first visit
     loader.js           Loads highlight.js and KaTeX on first use
+    html-frames.js      HTML blocks: sandboxed frames, made near the view; height, zoom, full screen
     markdown.js         Markdown → HTML (marked renderer, math, TOC)
     syntax.js           Markdown syntax highlighting for the editor
     editor.js           Editor component: backdrop, caret tracking, undo/redo; holds the document for every view
+    table.js            Table text: cells, alignment, inserting rows and columns
+    links.js            Links in Markdown text: finding, editing and removing them
     live.js             Live mode: splits the document into blocks, caches their HTML, edits one block at a time
     commands.js         Formatting commands (wrap, headings, lists, tables, links)
     popover.js          Menu and popover positioning and keyboard handling
+    live-tools.js       Live mode: slash menu, selection and table toolbars, link bubble, code language menu
+    live-blocks.js      Live mode: block handles, the block menu, dragging blocks
+    outline.js          The outline of headings beside the document
+    palette.js          The command palette
     annotations.js      Annotations without the page: following passages through edits, finding them in rendered text, the copied text
     annotate.js         The annotation dialog, panel and marks in the document
     app.js              Wires everything together (including the toolbar overflow)

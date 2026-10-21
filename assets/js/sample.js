@@ -6,7 +6,7 @@
 
 - 支持**加粗**、*斜体*、~~删除线~~、==高亮==、代码块、表格等标准 Markdown 语法
 - 支持行内公式 $E=mc^2$、块级公式（支持 KaTeX 渲染）
-- 支持目录、任务列表、引用区块
+- 支持目录、任务列表、引用区块，HTML 代码块直接显示成网页
 - 支持一键导入、导出 Markdown 文件，内容会自动保存在浏览器中
 - 常用快捷键：Ctrl+B（加粗）、Ctrl+I（斜体）、Ctrl+K（链接）、Ctrl+1–6（标题）、Ctrl+0（正文）、Ctrl+Z（撤销）、Ctrl+Alt+M（标注）、Ctrl+Shift+P（命令面板）
 
@@ -56,6 +56,7 @@
 - 表格在单元格里直接编辑：Tab 跳到下一格（在最后一格会新增一行），回车到下一行；表格上方的工具条可以设置对齐、插入行列或删除表格
 - 鼠标停在链接上，或者光标进入链接时，会出现链接气泡：在新标签页打开、编辑、复制地址、取消链接（光标在链接里时按 Ctrl+K 也能编辑）。按住 Ctrl（Mac 上是 ⌘）点击链接会直接打开
 - 点代码块左上角的语言可以搜索、更换语言
+- 语言是 \`html\` 的代码块（HTML 块）会直接运行，显示成网页（见「5. 其他功能」里的例子）：右下角可以缩放、全屏，拖右下角改变高度；点 **</>** 编辑源码，编辑时点右上角的「预览」可以边改边看
 - 点任务前的方框可以直接勾选
 
 ### 状态栏
@@ -143,6 +144,24 @@ function hello() {
 | 表头1 | 表头2 |
 |:------|:-----:|
 | 左对齐 | 居中 |
+
+语言是 \`html\` 的代码块放在沙箱里运行：脚本能跑，但读不到编辑器页面和本机保存的内容。编辑器的颜色可以用 \`var(--accent)\` 这样的变量，深色模式下会跟着变：
+
+\`\`\`html
+<style>
+  .card { max-width: 300px; padding: 20px; display: grid; gap: 12px; }
+  .card { border: 1px solid var(--border); border-radius: 14px; }
+  h3 { margin: 0; color: var(--text-strong); }
+  input, button { height: 36px; border-radius: 9px; font: inherit; }
+  input { padding: 0 12px; border: 1px solid var(--border-strong); }
+  button { border: 0; background: var(--accent); color: var(--on-accent); }
+</style>
+<div class="card">
+  <h3>订阅周报</h3>
+  <input type="email" placeholder="你的邮箱">
+  <button onclick="this.textContent = '已订阅'">订阅</button>
+</div>
+\`\`\`
 
 ---
 

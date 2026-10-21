@@ -386,6 +386,204 @@
     font-weight: 600;
 }
 
+/* --- HTML blocks (html-frames.js) ---------------------------------------- */
+/* A sandboxed frame; zoom and full screen bottom right, and a grip in the
+   corner that sets the height by hand */
+
+.markdown-preview .html-block {
+    position: relative;
+    margin: 0 0 1em;
+    overflow: hidden;
+    border: 1px solid var(--code-border);
+    border-radius: 14px;
+    background: var(--surface);
+    cursor: default;
+}
+
+.html-view {
+    height: 160px;
+}
+
+.html-frame {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: transparent;
+}
+
+/* Dragging the grip: the frame mustn't take the pointer */
+.html-block.is-resizing {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.html-block.is-resizing .html-frame {
+    pointer-events: none;
+}
+
+.html-tools {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    box-shadow: var(--shadow-segment);
+    font-family: var(--font-ui);
+    font-size: 12px;
+    line-height: 1;
+    color: var(--text-control);
+}
+
+.html-tool,
+.html-zoom {
+    height: 28px;
+    flex: none;
+    padding: 0;
+    display: inline-grid;
+    place-items: center;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: inherit;
+}
+
+.html-tool {
+    width: 28px;
+}
+
+.html-zoom {
+    min-width: 40px;
+    padding: 0 2px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+}
+
+.html-tool:hover,
+.html-zoom:hover {
+    background: var(--hover-strong);
+}
+
+.html-tool[aria-disabled="true"] {
+    background: transparent;
+    color: var(--faint);
+    cursor: default;
+}
+
+.html-sep {
+    width: 1px;
+    height: 18px;
+    flex: none;
+    margin: 0 3px;
+    background: var(--border);
+}
+
+.html-grip {
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    width: 12px;
+    height: 12px;
+    border-right: 2px solid var(--dot);
+    border-bottom: 2px solid var(--dot);
+    border-radius: 0 0 4px 0;
+    cursor: ns-resize;
+    touch-action: none;
+}
+
+.html-grip::before {
+    content: "";
+    position: absolute;
+    inset: -2px -3px -3px -2px;
+}
+
+/* Numbers of the annotations inside (the frame's text can't be marked) */
+.html-marks {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    display: flex;
+    gap: 4px;
+    pointer-events: none;
+}
+
+.html-marks:empty {
+    display: none;
+}
+
+.markdown-preview .html-marks .ann-mark {
+    margin: 0;
+    vertical-align: baseline;
+    pointer-events: auto;
+}
+
+/* Full screen; where the browser has none (an iPhone) the frame covers
+   the window instead, with a close button */
+.markdown-preview .html-block.is-fullscreen {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+}
+
+.html-block.is-fullscreen .html-view {
+    height: 100% !important;
+}
+
+.html-edit {
+    display: contents;
+}
+
+.html-block.is-fullscreen .html-grip,
+.html-block.is-fullscreen .html-edit {
+    display: none;
+}
+
+.markdown-preview .html-block.is-expanded {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+}
+
+.html-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    display: none;
+    place-items: center;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    box-shadow: var(--shadow-segment);
+    color: var(--text-control);
+}
+
+.html-block.is-expanded .html-close {
+    display: grid;
+}
+
+@media (pointer: coarse) {
+    .html-tool {
+        width: 36px;
+    }
+
+    .html-tool,
+    .html-zoom {
+        height: 36px;
+    }
+
+    .html-grip::before {
+        inset: -8px -3px -3px -8px;
+    }
+}
+
 /* --- Tables -------------------------------------------------------------- */
 
 .markdown-preview .table-wrap {

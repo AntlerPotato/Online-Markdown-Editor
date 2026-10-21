@@ -512,7 +512,8 @@
                 span.className = 'lang-tag';
                 span.textContent = tag;
                 el.appendChild(span);
-            } else if (current) {
+            }
+            if (current) {
                 el.insertAdjacentHTML('beforeend', '<svg class="menu-tick" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg>');
             }
             langShown.push({ el, name });
@@ -542,7 +543,8 @@
             });
             scored.sort((a, b) => a.score - b.score);
             langShown = [];
-            const items = scored.map(({ entry }) => langOption(entry.name, entry === known || (!known && entry.name === lang)));
+            // html runs in a frame (html-frames.js): 可渲染
+            const items = scored.map(({ entry }) => langOption(entry.name, entry === known || (!known && entry.name === lang), entry.name === 'html' ? '可渲染' : ''));
             // Any other name, as typed (an info string's first word)
             const typed = query.trim();
             if (typed && !scored.some((item) => item.exact) && /^[^\s`]+$/.test(typed)) items.push(langOption(typed, false, '使用这个名称'));
