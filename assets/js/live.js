@@ -112,15 +112,16 @@
         return lo;
     }
 
-    // marked expands leading tabs before lexing; map its offsets back to ours
+    // marked expands leading tabs before lexing (lexed is the text it
+    // sees); map its offsets back to ours
     function offsetMapper(text) {
         const lexed = text.replace(LEADING_TABS, (m, lead, tabs) => lead + '    '.repeat(tabs.length));
-        if (lexed === text) return { length: text.length, toSource: (pos) => pos };
+        if (lexed === text) return { lexed, toSource: (pos) => pos };
         const ours = lineStarts(text);
         const theirs = lineStarts(lexed);
         const lineEnd = (starts, line, total) => (line + 1 < starts.length ? starts[line + 1] - 1 : total);
         return {
-            length: lexed.length,
+            lexed,
             toSource(pos) {
                 const line = lastAtOrBefore(theirs, pos);
                 const ourLength = lineEnd(ours, line, text.length) - ours[line];
@@ -172,22 +173,53 @@
         return out;
     }
 
+    // A reference definition ([id]: url) that doesn't continue a paragraph
+    // gets no token from marked: its text is skipped. marked's own rule
+    // finds where it ends (sticky, to match at a given offset).
+    const DEF = new RegExp(marked.Lexer.rules.block.gfm.def.source.replace(/^\^/, ''), 'y');
+
     function split(text) {
-        const map = offsetMapper(text);
+        const { lexed, toSource } = offsetMapper(text);
         const tokens = marked.lexer(text);
         const list = [];
         let pos = 0;
         let last = 0;
-        tokens.forEach((token) => {
-            const from = pos;
-            pos = Math.min(map.length, pos + token.raw.length);
-            if (token.type === 'space') return;
-            let [start, end] = trimRange(text, map.toSource(from), map.toSource(pos));
+        const add = (from, to, token) => {
+            let [start, end] = trimRange(text, toSource(from), toSource(to));
             start = Math.max(start, last);
             if (end <= start || !text.slice(start, end).trim()) return;
             list.push({ start, end, token });
             last = end;
+        };
+        // The definitions marked skipped before the token whose source is
+        // next (null: the end): a block for each run of them, a blank line
+        // ending a run. Only taken if the token then starts where it should.
+        const skipDefinitions = (next) => {
+            const runs = [];
+            let from = pos;
+            let at = pos;
+            for (;;) {
+                DEF.lastIndex = at;
+                const def = DEF.exec(lexed);
+                if (!def) break;
+                at += def[0].length;
+                if (def[0].endsWith('\n\n')) {
+                    runs.push([from, at]);
+                    from = at;
+                }
+            }
+            if (from < at) runs.push([from, at]);
+            if (!runs.length || (next !== null && !lexed.startsWith(next, at))) return;
+            runs.forEach(([a, b]) => add(a, b, { type: 'def', raw: lexed.slice(a, b) }));
+            pos = at;
+        };
+        tokens.forEach((token) => {
+            skipDefinitions(token.raw);
+            const from = pos;
+            pos = Math.min(lexed.length, pos + token.raw.length);
+            if (token.type !== 'space') add(from, pos, token);
         });
+        skipDefinitions(null);
         return { list: mergeMath(list, markdown.mathSpans(text)), links: tokens.links || {} };
     }
 
