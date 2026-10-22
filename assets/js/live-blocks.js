@@ -86,6 +86,7 @@
         let menuEditing = false; // a block was being edited when the menu opened
         let drag = null;
         let suppressClick = false;
+        let slashWasOpen = false;  // pressed the "+" of the block the slash menu was open for
         let frame = 0;
 
         // ====================================================================
@@ -140,14 +141,16 @@
             const rect = el.getBoundingClientRect();
             const left = Math.round(rect.left - box.left + scroller.scrollLeft);
             const top = Math.round(firstLineMiddle(el, rect) - box.top + scroller.scrollTop - 12);
-            const key = `${info.gap}:${info.active}:${left}:${top}`;
+            // An empty line, or the "/" line of an open slash menu: a "+"
+            const add = info.gap || info.slash;
+            const key = `${add}:${info.active}:${left}:${top}`;
             h.block = el;
             h.el.hidden = false;
             if (key === h.placed) return;
             h.placed = key;
-            h.el.dataset.kind = info.gap ? 'add' : 'grip';
+            h.el.dataset.kind = add ? 'add' : 'grip';
             h.el.classList.toggle('is-active', info.active);
-            h.el.setAttribute('aria-label', info.gap ? '插入块' : '块菜单');
+            h.el.setAttribute('aria-label', add ? '插入块' : '块菜单');
             h.el.style.left = left + 'px';
             h.el.style.top = top + 'px';
         }
@@ -184,6 +187,11 @@
         function clickHandle(h) {
             if (suppressClick) {
                 suppressClick = false;
+                return;
+            }
+            // Pressing it closed the slash menu: that is all it does
+            if (slashWasOpen) {
+                slashWasOpen = false;
                 return;
             }
             const el = h.block;
@@ -461,6 +469,15 @@
                 if (drag && e.pointerId === drag.id) endDrag(false);
             });
         });
+
+        // Pressing the "+" of the line the slash menu is open for closes the
+        // menu (as a press outside it does, in popover.js); its click must
+        // not open the menu again. Window capture runs before popover.js.
+        window.addEventListener('pointerdown', (e) => {
+            const h = [edited, pointed].find((x) => x.el.contains(e.target));
+            const info = h && h.block && live.blockInfo(h.block);
+            slashWasOpen = !!info && info.slash;
+        }, true);
 
         // Esc puts the block back
         document.addEventListener('keydown', (e) => {

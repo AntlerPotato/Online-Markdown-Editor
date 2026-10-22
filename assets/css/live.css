@@ -190,6 +190,73 @@
     font-size: inherit;
 }
 
+/* Lists and quotes being edited: only the lines with the caret or the
+   selection (.is-caret) show their markers. The others keep them in place,
+   transparent, and draw what the rendered list shows there (live.js sets
+   data-m and data-n), so no text moves when the caret changes lines. */
+.lv-line:not(.is-caret) .t-list > .t-mark,
+.lv-line:not(.is-caret) .t-quote > .t-mark {
+    color: transparent;
+}
+
+.lv-line:not(.is-caret) .t-list[data-m]::before {
+    content: "";
+    display: inline-block;
+    box-sizing: border-box;
+    width: 5px;
+    height: 5px;
+    margin: 0 -10px 0 5px;
+    vertical-align: middle;
+}
+
+.lv-line:not(.is-caret) .t-list[data-m="disc"]::before {
+    border-radius: 50%;
+    background: var(--marker);
+}
+
+.lv-line:not(.is-caret) .t-list[data-m="circle"]::before {
+    border: 1px solid var(--marker);
+    border-radius: 50%;
+}
+
+.lv-line:not(.is-caret) .t-list[data-m="square"]::before {
+    background: var(--marker);
+}
+
+/* The number in the text's font, from where the marker starts */
+.lv-line:not(.is-caret) .t-list[data-m="num"]::before {
+    content: attr(data-n);
+    width: 0;
+    height: auto;
+    margin: 0;
+    vertical-align: baseline;
+    white-space: nowrap;
+    font-family: var(--font-doc);
+    font-size: calc(100% / 0.88);
+    color: var(--marker);
+}
+
+/* A task's box, as .task-check in preview.css */
+.lv-line:not(.is-caret) .t-list[data-m="task"]::before,
+.lv-line:not(.is-caret) .t-list[data-m="done"]::before {
+    width: 18px;
+    height: 18px;
+    margin: 0 -18px 0 0;
+    vertical-align: -3px;
+    border: 1.5px solid var(--border-strong);
+    border-radius: 5px;
+    background: var(--surface);
+}
+
+.lv-line:not(.is-caret) .t-list[data-m="done"]::before {
+    border-color: var(--ink);
+    background: var(--ink) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 5 5 9-10'/%3E%3C/svg%3E") center / 12px no-repeat;
+}
+
+:root[data-theme="dark"] .lv-line:not(.is-caret) .t-list[data-m="done"]::before {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230E1213' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 5 5 9-10'/%3E%3C/svg%3E");
+}
+
 /* An image stays visible under its source line while it is edited */
 .lv-media {
     margin-top: 8px;

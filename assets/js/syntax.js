@@ -154,7 +154,7 @@
         if (TOC.test(line)) return wrap('t-accent', esc(line));
         if ((m = HEADING.exec(line))) return esc(m[1]) + wrap('t-heading', mark(m[2] + m[3]) + inline(m[4]));
         if (HR.test(line) || TABLE_DELIMITER.test(line)) return mark(line);
-        if ((m = QUOTE.exec(line))) return mark(m[1]) + listOrText(m[2]);
+        if ((m = QUOTE.exec(line))) return wrap('t-quote', mark(m[1])) + listOrText(m[2]);
         return listOrText(line);
     }
 

@@ -245,6 +245,83 @@
     // ```html: shown in a sandboxed frame (html-frames.js)
     const isHtml = (b) => b.kind === 'fence' && b.lang === 'html' && !!MDE.htmlFrames;
 
+    // ========================================================================
+    // Lists and quotes being edited: only the lines with the caret show
+    // their markers. On the others the markers stay in place, transparent,
+    // and live.css draws what the rendered list shows there.
+    // ========================================================================
+
+    const LINE_KINDS = new Set(['list', 'quote']);
+    const ITEM_HTML = '<span class="t-list">';    // an item's marker, from syntax.js
+    const columns = (space) => space.replace(/\t/g, '    ').length;
+
+    function alpha(n) {
+        let out = '';
+        for (; n > 0; n = Math.floor((n - 1) / 26)) out = String.fromCharCode(97 + (n - 1) % 26) + out;
+        return out || String(n);
+    }
+
+    function roman(n) {
+        if (n <= 0 || n >= 4000) return String(n);
+        let out = '';
+        [[1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'], [100, 'c'], [90, 'xc'], [50, 'l'], [40, 'xl'], [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i']]
+            .forEach(([value, letters]) => {
+                for (; n >= value; n -= value) out += letters;
+            });
+        return out;
+    }
+
+    // How each item's marker looks rendered, as preview.css draws it: •, ◦
+    // and ▪ by depth; 1. 2. …, then a. b. …, then i. ii. …, counted on from
+    // the list's first number; a box for a task. Nesting goes by indent; a
+    // quote's own lists start afresh. items[i]: line i is a list item to
+    // the highlighter (not, say, a line of code).
+    function listMarkers(lines, items) {
+        let open = [];    // the lists around the line, outermost first
+        let quotes = -1;
+        return lines.map((line, i) => {
+            const quote = QUOTE_PREFIX.exec(line);
+            const depth = quote ? quote[0].split('>').length - 1 : 0;
+            if (depth !== quotes) {
+                open = [];
+                quotes = depth;
+            }
+            const m = items[i] && LIST_ITEM.exec(quote ? line.slice(quote[0].length) : line);
+            if (!m) return null;
+            const indent = columns(m[1]);
+            const ordered = /\d/.test(m[2]);
+            const marker = ordered ? m[2].slice(-1) : m[2];
+            while (open.length && indent < open[open.length - 1].indent) open.pop();
+            let list = open[open.length - 1];
+            if (list && indent >= list.content) {
+                list = null;
+            } else if (list && (list.ordered !== ordered || list.marker !== marker)) {
+                // Another bullet or delimiter starts another list
+                open.pop();
+                list = null;
+            }
+            if (!list) {
+                list = { indent, ordered, marker, next: ordered ? parseInt(m[2], 10) : 1, depth: open.filter((l) => l.ordered === ordered).length };
+                open.push(list);
+            }
+            list.content = indent + m[2].length + columns(m[3]);
+            const n = list.next++;
+            if (m[4]) return { m: /x/i.test(m[4]) ? 'done' : 'task' };
+            if (!ordered) return { m: ['disc', 'circle', 'square'][Math.min(list.depth, 2)] };
+            return { m: 'num', n: (list.depth === 0 ? String(n) : list.depth === 1 ? alpha(n) : roman(n)) + '.' };
+        });
+    }
+
+    // The lines of text that start..end touches: [first, last]
+    function linesTouched(text, start, end) {
+        const lineOf = (pos) => {
+            let line = 0;
+            for (let i = text.indexOf('\n'); i !== -1 && i < pos; i = text.indexOf('\n', i + 1)) line++;
+            return line;
+        };
+        return [lineOf(start), lineOf(end > start ? end - 1 : end)];
+    }
+
     function isMathBlock(source) {
         const s = source.trim();
         return s.length > 4 && s.startsWith('$$') && s.endsWith('$$') && s.includes('\n') && !s.slice(2, -2).includes('$$');
@@ -791,12 +868,55 @@
             return cls;
         }
 
-        function sourceHtml(value) {
-            return MDE.syntax.highlight(value).join('\n') + (!value || value.endsWith('\n') ? '<br>' : '');
+        // The lines of the block being edited that the caret or the
+        // selection is on (the document's selection: [first, last]), or null
+        function caretLines(b, value) {
+            const sel = editor.getSelection();
+            if (sel.end < b.start || sel.start > b.end) return null;
+            return linesTouched(value, clamp(sel.start - b.start, 0, value.length), clamp(sel.end - b.start, 0, value.length));
+        }
+
+        // A list or a quote: every line in a span (is-caret on those with
+        // the caret), and every item's marker with how it looks rendered
+        function lineSpans(b, value, lines) {
+            const markers = listMarkers(value.split('\n'), lines.map((html) => html.includes(ITEM_HTML)));
+            const [first, last] = caretLines(b, value) || [-1, -2];
+            return lines.map((html, i) => {
+                const marker = markers[i];
+                if (marker) html = html.replace(ITEM_HTML, `<span class="t-list" data-m="${marker.m}"${marker.n ? ` data-n="${marker.n}"` : ''}>`);
+                return `<span class="lv-line${i >= first && i <= last ? ' is-caret' : ''}">${html}</span>`;
+            });
+        }
+
+        // The caret or the selection moved: its lines show their markers
+        function markCaretLines() {
+            const b = active;
+            if (!visible || !b || b.gap || b.mode !== 'source' || !LINE_KINDS.has(b.kind) || composing) return;
+            const src = b.ui.src;
+            const sel = document.activeElement === src ? readSelection(src) : null;
+            const value = src.textContent;
+            const [first, last] = sel ? linesTouched(value, sel.start, sel.end) : caretLines(b, value) || [-1, -2];
+            let i = 0;
+            for (const line of src.children) {
+                if (!line.classList.contains('lv-line')) continue;
+                line.classList.toggle('is-caret', i >= first && i <= last);
+                i++;
+            }
+        }
+
+        function sourceHtml(b) {
+            const value = sourceOf(b);
+            let lines = MDE.syntax.highlight(value);
+            if (LINE_KINDS.has(b.kind)) lines = lineSpans(b, value, lines);
+            let html = lines.join('\n') + (!value || value.endsWith('\n') ? '<br>' : '');
+            // While the slash menu is open, its "/" is a marker
+            if (slash && slash.el === b.el && SLASH_KEYS.has(value[0]) && html[0] === value[0]) {
+                html = `<span class="t-mark">${value[0]}</span>` + html.slice(1);
+            }
+            return html;
         }
 
         function mountSource(b) {
-            const value = sourceOf(b);
             const media = b.kind === 'image' ? Array.from(b.el.querySelectorAll('img')) : [];
             const src = document.createElement('div');
             src.className = sourceClass(b);
@@ -808,7 +928,7 @@
             src.setAttribute('aria-multiline', 'true');
             src.setAttribute('aria-label', `${labelOf(b)}（Markdown 源码）`);
             src.dataset.placeholder = PLACEHOLDER;
-            src.innerHTML = sourceHtml(value);
+            src.innerHTML = sourceHtml(b);
             b.el.className = blockClass(b);
             b.el.style.containIntrinsicSize = '';
             b.el.replaceChildren(src);
@@ -908,10 +1028,9 @@
             b.el.className = blockClass(b);
             if (b.mode === 'source') {
                 const src = b.ui.src;
-                const value = sourceOf(b);
                 src.className = sourceClass(b);
                 if (composing) return;
-                const html = sourceHtml(value);
+                const html = sourceHtml(b);
                 if (src.innerHTML !== html) src.innerHTML = html;
                 return;
             }
@@ -1516,6 +1635,7 @@
                 if (focus && document.activeElement !== input && document.activeElement !== b.ui.lang) input.focus({ preventScroll: true });
                 if (input.selectionStart !== start || input.selectionEnd !== end) input.setSelectionRange(start, end);
             }
+            markCaretLines();
             revealCaret();
             notifyCaret();
             updateBubble();
@@ -1980,8 +2100,22 @@
 
         function closeSlash() {
             if (!slash) return;
+            const el = slash.el;
             slash = null;
+            paintSlash(el);
             if (onSlash) onSlash(null);
+        }
+
+        // The slash menu opened or closed for this block: redraw its "/"
+        function paintSlash(el) {
+            const b = active;
+            if (!b || b.el !== el || b.mode !== 'source' || composing) return;
+            const src = b.ui.src;
+            const html = sourceHtml(b);
+            if (src.innerHTML === html) return;
+            const sel = document.activeElement === src ? readSelection(src) : null;
+            src.innerHTML = html;
+            if (sel) writeSelection(src, sel.start, sel.end);
         }
 
         // After typing or a caret move: open the slash menu when "/" was just
@@ -1990,7 +2124,10 @@
         function updateSlash(typed) {
             const b = active;
             const m = b && !b.gap && b.mode === 'source' ? SLASH.exec(sourceOf(b)) : null;
-            if (typed && m && onSlash) slash = { el: b.el };
+            if (typed && m && onSlash) {
+                slash = { el: b.el };
+                paintSlash(b.el);
+            }
             if (!slash) return;
             const sel = m && slash.el === b.el ? readSelection(b.ui.src) : null;
             if (!sel || sel.start === 0 || /^\s/.test(m[1]) || onSlash(m[1], b.ui.src) === false) closeSlash();
@@ -2137,8 +2274,15 @@
             const to = next ? next.start : prev ? b.end : text.length;
             const sel = editor.getSelection();
             const map = mapper(from, to, 0);
+            const edited = b === active;
             structural = true;
             editor.replaceRange(from, to, '', map(sel.start), map(sel.end));
+            // It was being edited: the caret goes on to the start of the next
+            // block (the end of the one before), not to an empty line in its place
+            if (edited && active && active.gap) {
+                const at = blockAt(from);
+                if (at !== -1) enter(blocks[at], next ? 'start' : 'end');
+            }
         }
 
         // New source for a block (converted to another type); the caret goes
@@ -2189,6 +2333,8 @@
                 kind: b.kind,
                 depth: b.depth || 0,
                 gap: !!b.gap,
+                // The slash menu is open for it (its handle stays a "+")
+                slash: !!slash && slash.el === b.el,
                 active: b === active,
                 index: indexOf(b),
                 source: sourceOf(b)
@@ -2409,7 +2555,10 @@
             });
         }
 
-        document.addEventListener('selectionchange', scheduleCapture);
+        document.addEventListener('selectionchange', () => {
+            markCaretLines();
+            scheduleCapture();
+        });
         // Selection changes inside a textarea don't reach the document everywhere
         root.addEventListener('keyup', scheduleCapture);
         root.addEventListener('mouseup', scheduleCapture);
@@ -2500,7 +2649,9 @@
             dismissSlash() {
                 const b = active;
                 const auto = slash && slash.auto;
+                const el = slash && slash.el;
                 slash = null;
+                paintSlash(el);
                 // Opened with the "+" button and closed unused (Esc, or a
                 // click elsewhere): take the "/" away
                 if (auto && editor.getValue() === auto && textEditor(b) && document.activeElement === b.ui.src) editor.undo();
