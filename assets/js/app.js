@@ -106,6 +106,7 @@
         slashMenu: $('slashMenu'),
         toolbar: inlineToolbar,
         tableBar: $('tableToolbar'),
+        imageBar: $('imageToolbar'),
         tip: $('floatTip'),
         linkBubble: $('linkBubble'),
         langMenu: $('langMenu'),
@@ -119,6 +120,7 @@
                 if (!editing) live.stopEditing(true);
             }
         },
+        replaceImage: (image, button) => openLinkDialog(true, button, null, image),
         onSlashMenu: (open) => {
             slashShown = open;
             updateQuickBar();
@@ -739,15 +741,16 @@
     const linkAsImage = $('linkAsImage');
     let linkRange = null;
     let linkEdit = null;      // the link being edited (null: a new one is inserted)
+    let imageEdit = null;     // the image being replaced (live mode's image toolbar)
     let linkDone = null;      // where focus goes once the dialog is done
 
     function updateLinkLabels() {
         const image = linkAsImage.checked;
-        $('linkDialogTitle').textContent = linkEdit ? '编辑链接' : image ? '插入图片' : '插入链接';
+        $('linkDialogTitle').textContent = linkEdit ? '编辑链接' : imageEdit ? '替换图片' : image ? '插入图片' : '插入链接';
         $('linkTextLabel').textContent = image ? '图片描述' : '显示文字';
         $('linkUrlLabel').textContent = image ? '图片地址' : '链接地址';
-        $('linkSubmit').textContent = linkEdit ? '保存' : '插入';
-        $('linkImageOption').hidden = !!linkEdit;
+        $('linkSubmit').textContent = linkEdit || imageEdit ? '保存' : '插入';
+        $('linkImageOption').hidden = !!(linkEdit || imageEdit);
     }
 
     // Reference definitions ([label]: url) of a text, read only once a
@@ -765,15 +768,17 @@
     // selection toolbar or Ctrl+K in live mode, at the selection. With the
     // caret (or the selection) in a link, it edits that link. The link
     // bubble opens it for its link: edit = { link, rect, editing (a block
-    // of live mode was being edited) }.
-    function openLinkDialog(image, el, edit = null) {
+    // of live mode was being edited) }. The image toolbar's 替换图片 opens
+    // it over the image: replace = its { src, alt }.
+    function openLinkDialog(image, el, edit = null, replace = null) {
         const { start, end, value } = editor.getSelection();
         const selected = value.slice(start, end);
         const isUrl = /^(https?:\/\/|www\.)\S+$/.test(selected.trim());
         linkRange = { start, end };
+        imageEdit = replace;
         linkEdit = edit ? edit.link : image ? null : MDE.links.at(value, start, end, refsOf(value));
-        linkText.value = linkEdit ? linkEdit.text.replace(/\s*\n\s*/g, ' ') : isUrl ? '' : selected.replace(/\s*\n\s*/g, ' ');
-        linkUrl.value = linkEdit ? linkEdit.url : isUrl ? selected.trim() : 'https://';
+        linkText.value = replace ? replace.alt : linkEdit ? linkEdit.text.replace(/\s*\n\s*/g, ' ') : isUrl ? '' : selected.replace(/\s*\n\s*/g, ' ');
+        linkUrl.value = replace ? replace.src : linkEdit ? linkEdit.url : isUrl ? selected.trim() : 'https://';
         linkUrl.removeAttribute('aria-invalid');
         linkAsImage.checked = image;
         updateLinkLabels();
@@ -783,15 +788,21 @@
         const atSelection = !fromToolbar && state.view === 'live' && !!live.selectionRect();
         // From the bubble of a link nobody was editing: no block opens
         linkDone = edit && !edit.editing ? () => live.stopEditing(true) : focusEditor;
-        const anchor = edit || (el instanceof Element && (inlineToolbar.contains(el) || quickBar.contains(el))) ? el : button;
+        const anchor = edit || replace || (el instanceof Element && (inlineToolbar.contains(el) || quickBar.contains(el))) ? el : button;
         popover.open(linkDialog, anchor, {
-            rect: edit ? edit.rect : atSelection ? () => live.selectionRect() : null,
+            rect: replace ? imageTop : edit ? edit.rect : atSelection ? () => live.selectionRect() : null,
             returnFocus: fromToolbar ? null : linkDone,
             onOpen: () => {
                 linkUrl.focus();
                 linkUrl.setSelectionRange(linkUrl.value.length, linkUrl.value.length);
             }
         });
+    }
+
+    // An image being replaced: the dialog goes over its top
+    function imageTop() {
+        const r = live.imageRect();
+        return r && { top: r.top, bottom: r.top, left: r.left, right: r.left, width: 0, height: 0 };
     }
 
     linkAsImage.addEventListener('change', updateLinkLabels);
@@ -806,7 +817,10 @@
             return;
         }
         popover.close(false);
-        if (linkEdit) {
+        if (imageEdit) {
+            live.imageCommand('replace', { src: url, alt: linkText.value.trim() });
+            linkDone();
+        } else if (linkEdit) {
             editLink(linkEdit, linkText.value.trim(), url);
             linkDone();
         } else {

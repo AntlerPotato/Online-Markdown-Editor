@@ -1,7 +1,8 @@
 // Floating tools of live mode: the slash menu (type "/" on an empty line to
 // insert a block, keep typing to filter it), the formatting toolbar over
-// selected text, the toolbar of the table being edited, the bubble of a
-// link and the language menu of a code block. The menus and toolbars are
+// selected text, the toolbars of the table and the image being edited (and
+// the image's corner handles), the bubble of a link and the language menu
+// of a code block. The menus and toolbars are
 // popovers, so only one of them is open at a time; focus stays in the
 // text, and live.js hands them their keys. The link bubble is not a
 // popover: it scrolls with the text and leaves the others alone.
@@ -31,9 +32,11 @@
 
     // links: what the link bubble's buttons do ({ open(href), edit(link,
     // { anchor, rect, editing }), copy(url), unlink(link, { editing }) },
-    // from app.js; editing: a block was being edited). onSlashMenu(open):
-    // the slash menu opened or closed (the quick bar's "/" shows it).
-    MDE.createLiveTools = function ({ live, scroller, slashMenu, toolbar, tableBar, tip, linkBubble, langMenu, links, onSlashMenu }) {
+    // from app.js; editing: a block was being edited). replaceImage(state,
+    // button): the image toolbar's 替换图片 (app.js opens the dialog).
+    // onSlashMenu(open): the slash menu opened or closed (the quick bar's
+    // "/" shows it).
+    MDE.createLiveTools = function ({ live, scroller, slashMenu, toolbar, tableBar, imageBar, tip, linkBubble, langMenu, links, replaceImage, onSlashMenu }) {
         const isOpen = (panel) => {
             const open = popover.current();
             return !!open && open.panel === panel;
@@ -173,12 +176,14 @@
         list.addEventListener('click', (e) => choose(e.target.closest('[role="option"]')));
 
         // ====================================================================
-        // Selection toolbar and table toolbar
+        // Selection toolbar, table toolbar and image toolbar
         // ====================================================================
 
         let dismissed = null;   // the selection ("start:end") whose toolbar was closed with Esc
         let dragging = false;
         let table = null;       // live.tableState() while the table toolbar is open
+        let image = null;       // live.imageState() while the image toolbar is open
+        let resizing = null;    // a corner handle of the image is being dragged
 
         // Above the selection, centred on it; below it when there is no room
         // above, and on touch screens, where the system's own selection
@@ -231,6 +236,37 @@
             panel.dataset.side = top < rect.top ? 'above' : 'below';
         }
 
+        // Above the image, at its left edge, in the room left for it under
+        // the source; under the image when that is out of view, else at the
+        // top of the view
+        function placeImageBar(panel) {
+            hideTip();
+            const box = scroller.getBoundingClientRect();
+            const view = popover.viewport();
+            const top0 = Math.max(box.top, view.top);
+            const bottom = Math.min(box.bottom, view.bottom);
+            const rect = image.wrap.getBoundingClientRect();
+            const visible = rect.bottom > top0 && rect.top < bottom;
+            panel.style.visibility = visible ? '' : 'hidden';
+            if (!visible) return;
+            const width = panel.offsetWidth;
+            const height = panel.offsetHeight;
+            let top = rect.top - height - 8;
+            if (top < top0 + 4) top = rect.bottom + 8 + height <= bottom ? rect.bottom + 8 : top0 + 8;
+            panel.style.left = clamp(rect.left, 8, document.documentElement.clientWidth - width - 8) + 'px';
+            panel.style.top = clamp(top, view.top + 8, view.bottom - height - 8) + 'px';
+            panel.dataset.side = top < rect.top ? 'above' : 'below';
+        }
+
+        // Its alignment, and 50% / 100% when it is that wide
+        function paintImageBar() {
+            imageBar.querySelectorAll('[data-image][aria-pressed]').forEach((el) => {
+                const name = el.dataset.image;
+                const on = name === '50' ? image.width === '50%' : name === '100' ? image.full : image.align === name;
+                el.setAttribute('aria-pressed', String(on));
+            });
+        }
+
         // The alignment of the caret's column (none shows as left)
         function paintTableBar() {
             tableBar.querySelectorAll('[data-table][aria-pressed]').forEach((el) => {
@@ -241,11 +277,16 @@
 
         function closedToolbar() {
             table = null;
+            image = null;
             hideTip();
         }
 
+        const BARS = [toolbar, tableBar, imageBar];
+
         // Show, move or hide the toolbars: the formatting one while text is
-        // selected, else the table one while a table cell is being edited
+        // selected, else the table one while a table cell is being edited,
+        // else the image one while an image block is (not while a corner
+        // handle is dragged)
         function refresh() {
             refreshLink();
             const state = dragging ? null : live.selectionState();
@@ -253,14 +294,19 @@
             if (dismissed && dismissed !== key) dismissed = null;
             const text = !!state && !state.collapsed && !PLAIN_KINDS.has(state.kind) && !dismissed;
             const cell = text ? null : live.tableState();
-            const panel = text ? toolbar : cell ? tableBar : null;
-            const anchor = text ? state.el : cell ? cell.el : null;
+            const pic = text || cell || dragging || resizing ? null : live.imageState();
+            const panel = text ? toolbar : cell ? tableBar : pic ? imageBar : null;
+            const anchor = text ? state.el : cell ? cell.el : pic ? pic.el : null;
             const open = popover.current();
-            if (open && (open.panel === toolbar || open.panel === tableBar)) {
+            if (open && BARS.includes(open.panel)) {
                 if (open.panel === panel && open.anchor === anchor) {
                     if (cell) {
                         table = cell;
                         paintTableBar();
+                    }
+                    if (pic) {
+                        image = pic;
+                        paintImageBar();
                     }
                     popover.update();
                     return;
@@ -270,8 +316,10 @@
             // Never push another open panel aside (a menu, the link dialog)
             if (!panel || popover.current()) return;
             table = cell;
+            image = pic;
             if (cell) paintTableBar();
-            popover.open(panel, anchor, { place: cell ? placeTableBar : placeToolbar, onClose: closedToolbar });
+            if (pic) paintImageBar();
+            popover.open(panel, anchor, { place: cell ? placeTableBar : pic ? placeImageBar : placeToolbar, onClose: closedToolbar });
         }
 
         toolbar.addEventListener('mousedown', (e) => e.preventDefault());
@@ -280,6 +328,87 @@
             const button = e.target.closest('[data-table]');
             if (button) live.tableCommand(button.dataset.table);
         });
+        imageBar.addEventListener('mousedown', (e) => e.preventDefault());
+        imageBar.addEventListener('click', (e) => {
+            const button = e.target.closest('[data-image]');
+            if (!button || !image) return;
+            const name = button.dataset.image;
+            if (name === 'replace') replaceImage(image, button);
+            else if (name === '50' || name === '100') live.imageCommand('width', Number(name));
+            else live.imageCommand(name);
+        });
+
+        // --- The selected image's corner handles: drag to change its width
+        // (a percentage of the text's width, in steps of 5, 10–100). The
+        // image shows the width as it goes; letting go writes it (one undo
+        // step), Esc puts it back.
+
+        function endResize(commit) {
+            const r = resizing;
+            if (!r) return;
+            resizing = null;
+            r.wrap.classList.remove('is-resizing');
+            // (the width written, if any, shows once the source has it)
+            r.wrap.style.width = r.width;
+            r.wrap.classList.toggle('has-width', !!r.width);
+            if (commit && r.percent !== null) live.imageCommand('width', r.percent);
+            requestAnimationFrame(refresh);
+        }
+
+        scroller.addEventListener('pointerdown', (e) => {
+            const handle = e.target.closest('.lv-img-handle');
+            if (!handle || e.button !== 0) return;
+            const state = live.imageState();
+            const wrap = handle.parentElement;
+            if (!state || state.wrap !== wrap) return;
+            e.preventDefault();
+            handle.setPointerCapture(e.pointerId);
+            const left = handle.dataset.corner.endsWith('w');
+            resizing = {
+                wrap,
+                id: e.pointerId,
+                x: e.clientX,
+                start: wrap.getBoundingClientRect().width,
+                column: wrap.parentElement.clientWidth,
+                // The corner follows the pointer: a centred image grows on both sides
+                factor: (left ? -1 : 1) * (state.align === 'center' ? 2 : 1),
+                width: wrap.style.width,
+                percent: null
+            };
+            wrap.querySelector('.lv-img-size').textContent = Math.round(resizing.start / resizing.column * 100) + '%';
+            wrap.classList.add('is-resizing');
+            refresh();
+        });
+
+        // (The handles keep focus in the source)
+        scroller.addEventListener('mousedown', (e) => {
+            if (e.target.closest('.lv-img-handle')) e.preventDefault();
+        });
+
+        scroller.addEventListener('pointermove', (e) => {
+            const r = resizing;
+            if (!r || e.pointerId !== r.id) return;
+            const width = r.start + r.factor * (e.clientX - r.x);
+            r.percent = clamp(Math.round(width / r.column * 20) * 5, 10, 100);
+            r.wrap.style.width = r.percent + '%';
+            r.wrap.classList.add('has-width');
+            r.wrap.querySelector('.lv-img-size').textContent = r.percent + '%';
+        });
+
+        scroller.addEventListener('pointerup', (e) => {
+            if (resizing && e.pointerId === resizing.id) endResize(true);
+        });
+
+        scroller.addEventListener('pointercancel', (e) => {
+            if (resizing && e.pointerId === resizing.id) endResize(false);
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (!resizing || e.key !== 'Escape') return;
+            e.preventDefault();
+            e.stopPropagation();
+            endResize(false);
+        }, true);
 
         // No toolbar while a selection is being dragged out
         scroller.addEventListener('pointerdown', (e) => {
@@ -316,7 +445,7 @@
             tip.hidden = true;
         }
 
-        [toolbar, tableBar, linkBubble].forEach((bar) => {
+        [toolbar, tableBar, imageBar, linkBubble].forEach((bar) => {
             bar.addEventListener('pointerover', (e) => {
                 const button = e.target.closest('.tb');
                 if (button && e.pointerType === 'mouse') showTip(button, bar);
@@ -683,7 +812,7 @@
         scroller.addEventListener('focusout', () => {
             requestAnimationFrame(() => {
                 const open = popover.current();
-                if (open && [slashMenu, toolbar, tableBar].includes(open.panel) && !open.anchor.contains(document.activeElement)) {
+                if (open && [slashMenu, toolbar, tableBar, imageBar].includes(open.panel) && !open.anchor.contains(document.activeElement)) {
                     popover.close(false);
                 }
             });

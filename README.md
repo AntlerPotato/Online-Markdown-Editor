@@ -13,6 +13,7 @@ A lightweight Markdown editor that runs entirely in the browser. Write in live m
 - Select text for a toolbar above it: bold, italic, strikethrough, highlight, inline code, inline formula, link, clear formatting, and **标注**
 - A handle beside each block: drag it to move the block, or click it for a menu (turn it into a paragraph, heading, quote, list or code block; insert below; copy; copy as Markdown; delete). Ctrl+Enter opens an empty line below the block being edited
 - Tables are edited cell by cell: Tab and Enter move between cells and add a row at the end, the arrow keys cross cell edges, and a toolbar above the table sets the column's alignment, inserts rows and columns, or deletes the table
+- Click an image for a toolbar above it: align it left, centre or right, make it 50% or 100% of the text's width, replace it or delete it; drag its corners to set the width (in steps of 5%). An image with a width or alignment is written as HTML that GitHub also shows: `<img src="…" alt="…" width="50%">`, in `<p align="center">` when centred. Back at full width on the left it is `![…](…)` again
 - Hovering over a link, or putting the caret in it, shows a bubble to open, edit, copy or remove it; Ctrl+K edits the link the caret is in
 - Code blocks are edited in a code editor with line numbers; the language chip at its top left opens a searchable list of languages; formula blocks show a live preview under their LaTeX, and an inline formula shows one while the caret is in it
 - `html` code blocks run as web pages, in a frame sandboxed with only `allow-scripts`: their scripts work, but they can't reach the editor's page or its storage. A frame is made when it scrolls near the view and grows with its content (up to 80% of the view's height); its bottom-right corner has zoom (50–200%), full screen, **</>** to edit the code, and a grip to set the height by hand (double-click it to follow the content again). While the code is being edited, the 安全渲染 label says what the sandbox allows and 预览 shows the result under the code. The editor's colours are there as CSS variables (`var(--accent)`, `var(--text)` …) and follow the theme
@@ -59,6 +60,7 @@ A lightweight Markdown editor that runs entirely in the browser. Write in live m
 | `[TOC]` on its own line | Table of contents |
 | `- [ ]` / `- [x]` | Task list |
 | A fenced code block in `html` | The HTML, run in a sandboxed frame |
+| `<p align="center"><img src="…" width="50%"></p>` | An image half the text's width, centred (what the image toolbar writes) |
 
 Standard GitHub-flavoured Markdown (tables, fenced code, strikethrough, autolinks) works as usual. A single line break is kept as a line break.
 
@@ -125,7 +127,7 @@ assets/
     menus.css           Menus and popovers: file, paragraph style, more tools, phone menu, table picker, link dialog, slash menu, floating toolbars, block menu, link bubble, language menu, command palette, annotation dialog, toast
     editor.css          Source editor (transparent textarea over a highlighted backdrop)
     preview.css         Rendered Markdown, code theme, KaTeX tweaks, HTML block frames, annotation marks
-    live.css            Live mode: blocks, the block being edited, code, formula and table editing, block handles
+    live.css            Live mode: blocks, the block being edited, code, formula and table editing, images and their corner handles, block handles
   js/
     store.js            Safe localStorage wrapper (settings and autosave)
     typography.js       Typography settings (page width, fonts, line spacing), applied before the first paint
@@ -137,16 +139,18 @@ assets/
     editor.js           Editor component: backdrop, caret tracking, undo/redo; holds the document for every view
     table.js            Table text: cells, alignment, inserting rows and columns
     links.js            Links in Markdown text: finding, editing and removing them
-    live.js             Live mode: splits the document into blocks, caches their HTML, edits one block at a time
+    live.js             Live mode: splits the document into blocks, caches their HTML, edits one block at a time; images' width and alignment
     commands.js         Formatting commands (wrap, headings, lists, tables, links)
     popover.js          Menu and popover positioning and keyboard handling
-    live-tools.js       Live mode: slash menu, selection and table toolbars, link bubble, code language menu
+    live-tools.js       Live mode: slash menu, selection, table and image toolbars, link bubble, code language menu
     live-blocks.js      Live mode: block handles, the block menu, dragging blocks
     outline.js          The outline of headings beside the document
     palette.js          The command palette
     annotations.js      Annotations without the page: following passages through edits, finding them in rendered text, the copied text
     annotate.js         The annotation dialog, panel and marks in the document
     app.js              Wires everything together (including the toolbar overflow)
+  img/
+    sample.svg          The picture in the sample document
 docs/
   screenshot.png
 .gitattributes          Line endings (LF) and binary file rules
