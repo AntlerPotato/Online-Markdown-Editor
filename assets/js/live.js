@@ -31,7 +31,14 @@
     // Lines inside a table cell
     const CELL_BREAK = /[ \t]*<br\s*\/?>[ \t]*/i;
 
-    const IMAGE_ONLY = /^(?:[ \t]*!\[[^\]\n]*\]\([^)\n]*\)[ \t]*(?:\n|$))+$/;
+    const IMAGE_ONLY = /^(?:[ \t]*!\[(?:\\.|[^\\\]\n])*\]\([^)\n]*\)[ \t]*(?:\n|$))+$/;
+    const IMAGE_LINE = /^([ \t]*)!\[((?:\\.|[^\\\]\n])*)\]\(([^)\n]*)\)[ \t]*$/;
+    // An HTML block of one <img>, on its own or in a <p> or <div>: shown
+    // and edited as an image, like ![…](…)
+    const ATTRS = String.raw`(?:\s+[^\s"'>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>\x60]+))?)*\s*`;
+    const IMAGE_HTML = new RegExp(String.raw`^\s*(?:<(p|div)${ATTRS}>\s*)?<img${ATTRS}/?>\s*(?:</\1\s*>\s*)?$`, 'i');
+    const ALIGNS = new Set(['left', 'center', 'right']);
+    const MEDIA_DELAY = 400;            // ms of quiet typing before the images under an image's source follow it
     const TOC_LINE = /^[ \t]*\[TOC\][ \t]*$/m;
     const FENCE_OPEN = /^( {0,3})(`{3,}|~{3,})([^\n]*)/;
     const FENCE_LINE = /^ {0,3}(`{3,}|~{3,})[^`\n]*$/;
@@ -246,6 +253,147 @@
     const isHtml = (b) => b.kind === 'fence' && b.lang === 'html' && !!MDE.htmlFrames;
 
     // ========================================================================
+    // Image blocks: one ![…](…) per line, or one <img> written in HTML. The
+    // image toolbar sets an image's width and alignment by writing it as
+    // <img … width="50%">, in <p align="center"> when it isn't on the left.
+    // ========================================================================
+
+    const unescapeMd = (value) => value.replace(/\\([!-/:-@[-`{-~])/g, '$1');
+    const escapeAttr = (value) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    const attrsOf = (el) => Array.from(el.attributes, (a) => [a.name, a.value]);
+    const attrOf = (attrs, name) => {
+        const found = attrs.find(([n]) => n === name);
+        return found ? found[1] : null;
+    };
+
+    // ![alt](destination "title"): the destination and the title as written
+    function splitTarget(inner) {
+        const m = /^\s*(<[^<>\n]*>|\S*)(?:\s+("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'))?\s*$/.exec(inner);
+        return m ? { dest: m[1], title: m[2] || '' } : { dest: inner.trim(), title: '' };
+    }
+
+    const srcOf = (dest) => unescapeMd(dest.startsWith('<') ? dest.slice(1, -1) : dest);
+    const titleOf = (title) => (title ? unescapeMd(title.slice(1, -1)) : null);
+
+    // Where the alt="…" of the <img> in an HTML source ends (without one:
+    // the end of its attributes)
+    function altEndIn(source) {
+        const re = /\s+([^\s"'>/=]+)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s"'=<>`]+))?/y;
+        re.lastIndex = Math.max(0, source.search(/<img/i)) + 4;
+        let end = re.lastIndex;
+        let m;
+        while ((m = re.exec(source))) {
+            end = re.lastIndex;
+            if (m[1].toLowerCase() === 'alt' && m[2] !== undefined) return end - (/^["']/.test(m[2]) ? 1 : 0);
+        }
+        return end;
+    }
+
+    // The images of an image block's source: where each one is (from, to;
+    // altEnd: the end of its description), its address, description,
+    // title, width (an attribute's value, or null) and alignment; for one
+    // in HTML its attributes and those of the <p>/<div> around it, for one
+    // in Markdown how its parts are written (md)
+    function imagesOf(source, htmlImage) {
+        if (htmlImage) {
+            const tpl = document.createElement('template');
+            tpl.innerHTML = source;
+            const img = tpl.content.querySelector('img');
+            if (!img) return [];
+            const attrs = attrsOf(img);
+            const parent = img.parentElement;
+            const wrap = parent ? { tag: parent.localName, attrs: attrsOf(parent) } : null;
+            const align = ((wrap && attrOf(wrap.attrs, 'align')) || '').toLowerCase();
+            return [{
+                from: 0,
+                to: source.length,
+                altEnd: altEndIn(source),
+                source,
+                html: true,
+                indent: '',
+                src: attrOf(attrs, 'src') || '',
+                alt: attrOf(attrs, 'alt') || '',
+                title: attrOf(attrs, 'title'),
+                width: attrOf(attrs, 'width'),
+                align: ALIGNS.has(align) ? align : 'left',
+                attrs,
+                wrap
+            }];
+        }
+        const images = [];
+        let at = 0;
+        source.split('\n').forEach((line) => {
+            const m = IMAGE_LINE.exec(line);
+            if (m) {
+                const target = splitTarget(m[3]);
+                images.push({
+                    from: at,
+                    to: at + line.length,
+                    altEnd: at + m[1].length + 2 + m[2].length,
+                    source: line,
+                    html: false,
+                    indent: m[1],
+                    src: srcOf(target.dest),
+                    alt: unescapeMd(m[2]),
+                    title: titleOf(target.title),
+                    width: null,
+                    align: 'left',
+                    md: { alt: m[2], dest: target.dest, title: target.title }
+                });
+            }
+            at += line.length + 1;
+        });
+        return images;
+    }
+
+    // An image's source: Markdown while it needs nothing else (no width,
+    // on the left, no other attributes), else HTML. caret: where its
+    // description ends.
+    function writeImage(image) {
+        const SET = ['src', 'alt', 'title', 'width'];
+        const extra = image.html ? image.attrs.filter(([n]) => !SET.includes(n)) : [];
+        let wrapAttrs = image.wrap ? image.wrap.attrs.slice() : [];
+        if (image.align === 'left') wrapAttrs = wrapAttrs.filter(([n]) => n !== 'align');
+        else if (attrOf(wrapAttrs, 'align') !== null) wrapAttrs = wrapAttrs.map(([n, v]) => [n, n === 'align' ? image.align : v]);
+        else wrapAttrs.push(['align', image.align]);
+
+        if (!image.width && !extra.length && !wrapAttrs.length) {
+            // As written where it didn't change
+            const md = image.md || {};
+            const alt = md.alt !== undefined && unescapeMd(md.alt) === image.alt ? md.alt : image.alt.replace(/[\\[\]]/g, '\\$&');
+            let dest = md.dest !== undefined && srcOf(md.dest) === image.src ? md.dest
+                : image.src.replace(/[()<>]/g, (ch) => '%' + ch.charCodeAt(0).toString(16).toUpperCase());
+            if (/\s/.test(dest) && !dest.startsWith('<')) dest = `<${dest}>`;
+            const title = image.title === null ? ''
+                : ' ' + (md.title && titleOf(md.title) === image.title ? md.title : `"${image.title.replace(/["\\]/g, '\\$&')}"`);
+            const head = `${image.indent}![${alt}`;
+            return { text: `${head}](${dest}${title})`, caret: head.length, html: false };
+        }
+
+        const values = { src: image.src, alt: image.alt, title: image.title, width: image.width };
+        let attrs = image.html ? image.attrs.map(([n, v]) => [n, n in values ? values[n] : v])
+            : [['src', image.src], ['alt', image.alt], ['title', image.title]];
+        if (attrOf(attrs, 'alt') === null) attrs.splice(attrOf(attrs, 'src') === null ? 0 : attrs.findIndex(([n]) => n === 'src') + 1, 0, ['alt', image.alt]);
+        if (image.width && !attrs.some(([n]) => n === 'width')) attrs.push(['width', image.width]);
+        attrs = attrs.filter(([, v]) => v !== null && v !== undefined);
+        let text = '<img';
+        let caret = 0;
+        attrs.forEach(([n, v]) => {
+            text += ` ${n}="${escapeAttr(v)}`;
+            if (n === 'alt') caret = text.length;
+            text += '"';
+        });
+        text += '>';
+        if (wrapAttrs.length) {
+            const tag = image.wrap ? image.wrap.tag : 'p';
+            const open = `<${tag}${wrapAttrs.map(([n, v]) => ` ${n}="${escapeAttr(v)}"`).join('')}>`;
+            text = open + text + `</${tag}>`;
+            caret += open.length;
+        }
+        return { text: image.indent + text, caret: image.indent.length + caret, html: true };
+    }
+
+    // ========================================================================
     // Lists and quotes being edited: only the lines with the caret show
     // their markers. On the others the markers stay in place, transparent,
     // and live.css draws what the rendered list shows there.
@@ -340,15 +488,17 @@
             case 'paragraph':
                 if (isMathBlock(source)) return { kind: 'math' };
                 if (source.trim() === '[TOC]') return { kind: 'toc' };
-                if (IMAGE_ONLY.test(source)) return { kind: 'image' };
+                if (IMAGE_ONLY.test(source)) return { kind: 'image', htmlImage: false };
                 return { kind: 'paragraph' };
             case 'blockquote':
                 return { kind: 'quote' };
             case 'list':
                 return { kind: 'list', ordered: token.ordered, task: token.items.some((item) => item.task) };
+            case 'html':
+                if (IMAGE_HTML.test(source)) return { kind: 'image', htmlImage: true };
+                return { kind: 'html' };
             case 'table':
             case 'hr':
-            case 'html':
             case 'def':
                 return { kind: token.type };
             default:
@@ -572,6 +722,7 @@
             return link ? link.href : undefined;
         };
         const baseOf = (b) => (b.gap ? b.pos : b.start);
+        const isHtmlImage = (b) => b.kind === 'image' && !!b.htmlImage;
         const editorFor = (b) => (b.kind === 'fence' ? 'code' : b.kind === 'math' ? 'math' : b.kind === 'table' ? 'table' : 'source');
         // The text editor of the block (a source block, or a table's open
         // cell) and the document offset its text starts at
@@ -618,18 +769,22 @@
 
         // --- Rendering ------------------------------------------------------
 
-        function entryFor(b) {
-            const source = sourceOf(b);
-            const full = defs && USES_DEFS.has(b.kind) ? source + '\n\n' + defs : source;
-            if (b.toc) return markdown.render(full, { tasks: true, toc: tocHeadings });
-            const key = hash(full);
+        function rendered(source) {
+            const key = hash(source);
             let entry = cache.get(key);
             if (!entry) {
-                entry = markdown.render(full, { tasks: true });
+                entry = markdown.render(source, { tasks: true });
                 if (cache.size >= CACHE_LIMIT) cache.delete(cache.keys().next().value);
                 cache.set(key, entry);
             }
             return entry;
+        }
+
+        function entryFor(b) {
+            const source = sourceOf(b);
+            const full = defs && USES_DEFS.has(b.kind) ? source + '\n\n' + defs : source;
+            if (b.toc) return markdown.render(full, { tasks: true, toc: tocHeadings });
+            return rendered(full);
         }
 
         // Focus mode dims the other blocks only while one is being edited.
@@ -835,6 +990,7 @@
                 if (list.length !== 1) return false;
                 Object.assign(b, kindOf(list[0].token, source), { toc: TOC_LINE.test(source) });
                 b.el.className = blockClass(b);
+                b.ui.typing = true;
                 refreshEditor(b);
             } else if (b.mode === 'table') {
                 refreshTable(b);
@@ -849,7 +1005,11 @@
             const value = editor.getValue();
             const edit = selfEdit;
             selfEdit = null;
-            if (value !== text && !(edit && !structural && active && !active.gap && fastPath(edit, value))) rebuild();
+            if (value !== text && !(edit && !structural && active && !active.gap && fastPath(edit, value))) {
+                // (not typing: the images under an image's source follow at once)
+                if (active && active.mode === 'source') active.ui.typing = false;
+                rebuild();
+            }
             structural = false;
             if (editing) placeCaret();
             // Undo, a command: the "/" line may be gone
@@ -863,7 +1023,7 @@
             if (b.kind === 'heading') cls += ' lv-heading lv-h' + b.depth;
             else if (b.kind === 'quote') cls += ' lv-quote';
             else if (b.kind === 'table') cls += ' lv-mono lv-table';
-            else if (MONO_KINDS.has(b.kind)) cls += ' lv-mono';
+            else if (MONO_KINDS.has(b.kind) || isHtmlImage(b)) cls += ' lv-mono';
             if (!sourceOf(b)) cls += ' is-empty';
             return cls;
         }
@@ -932,16 +1092,217 @@
             b.el.className = blockClass(b);
             b.el.style.containIntrinsicSize = '';
             b.el.replaceChildren(src);
-            // An image keeps showing (without reloading) under its source line
-            if (media.length) {
-                const box = document.createElement('div');
-                box.className = 'lv-media';
-                box.contentEditable = 'false';
-                box.append(...media);
-                b.el.appendChild(box);
-            }
             b.mode = 'source';
-            b.ui = { src, mountedKind: b.kind };
+            b.ui = { src, mountedKind: b.kind, media: null, wraps: [], images: [], selected: -1, mediaTimer: 0, typing: false };
+            // An image keeps showing (without reloading) under its source line
+            if (b.kind === 'image') syncMedia(b, media);
+        }
+
+        // --- Images under the source of an image block ------------------------
+        // Each image of the source in a span.lv-img (as wide as the image
+        // shows), under the source line. The one the caret is on is
+        // selected: a ring, corner handles to drag its width, and room
+        // above it for the image toolbar (live-tools.js).
+
+        const imageHandles = () => {
+            const frag = document.createDocumentFragment();
+            ['nw', 'ne', 'sw', 'se'].forEach((corner) => {
+                const handle = document.createElement('span');
+                handle.className = 'lv-img-handle';
+                handle.dataset.corner = corner;
+                frag.appendChild(handle);
+            });
+            const size = document.createElement('span');
+            size.className = 'lv-img-size';
+            frag.appendChild(size);
+            return Array.from(frag.childNodes);
+        };
+
+        // Show the images the source has now; an image whose address didn't
+        // change keeps its element (it doesn't load again). pool: the images
+        // of the rendered block, when editing starts.
+        function syncMedia(b, pool = []) {
+            const ui = b.ui;
+            clearTimeout(ui.mediaTimer);
+            ui.mediaTimer = 0;
+            ui.images = b.kind === 'image' ? imagesOf(sourceOf(b), b.htmlImage) : [];
+            if (!ui.images.length) {
+                if (ui.media) ui.media.remove();
+                ui.media = null;
+                ui.wraps = [];
+                ui.selected = -1;
+                return;
+            }
+            if (!ui.media) {
+                ui.media = document.createElement('div');
+                ui.media.className = 'lv-media';
+                ui.media.contentEditable = 'false';
+                b.el.appendChild(ui.media);
+            }
+            const old = pool.concat(ui.wraps.filter(Boolean).map((wrap) => wrap.querySelector('img')));
+            const tpl = document.createElement('template');
+            ui.wraps = ui.images.map((image, i) => {
+                // As the image renders on its own (an address that isn't
+                // allowed shows no image)
+                tpl.innerHTML = rendered(image.html ? image.source : image.source.trim()).html;
+                const fresh = tpl.content.querySelector('img');
+                if (!fresh) return null;
+                const k = old.findIndex((img) => img && img.getAttribute('src') === fresh.getAttribute('src'));
+                let img = fresh;
+                if (k !== -1) {
+                    img = old[k];
+                    old[k] = null;
+                    Array.from(img.attributes).forEach((a) => {
+                        if (!fresh.hasAttribute(a.name)) img.removeAttribute(a.name);
+                    });
+                    Array.from(fresh.attributes).forEach((a) => {
+                        if (img.getAttribute(a.name) !== a.value) img.setAttribute(a.name, a.value);
+                    });
+                }
+                const wrap = ui.wraps[i] || document.createElement('span');
+                wrap.className = 'lv-img';
+                wrap.dataset.align = image.align;
+                const width = img.getAttribute('width') || '';
+                const pct = /^\s*(\d+(?:\.\d+)?)\s*%\s*$/.exec(width);
+                const px = parseFloat(width);
+                wrap.style.width = pct ? pct[1] + '%' : px > 0 ? px + 'px' : '';
+                wrap.classList.toggle('has-width', !!wrap.style.width);
+                wrap.querySelectorAll('img').forEach((el) => {
+                    if (el !== img) el.remove();
+                });
+                if (wrap.firstChild !== img) wrap.prepend(img);
+                return wrap;
+            });
+            ui.media.replaceChildren(...ui.wraps.filter(Boolean));
+            ui.selected = -1;
+            markImage();
+        }
+
+        // While typing, the images follow once typing pauses (no loading
+        // every half-typed address)
+        function queueMedia(b) {
+            clearTimeout(b.ui.mediaTimer);
+            b.ui.mediaTimer = setTimeout(() => {
+                if (active === b && b.mode === 'source') syncMedia(b);
+            }, MEDIA_DELAY);
+        }
+
+        // The image of an image block that holds offset `at` of its source
+        function imageAt(images, at) {
+            let k = 0;
+            while (k + 1 < images.length && images[k + 1].from <= at) k++;
+            return k;
+        }
+
+        // The caret moved: the image it is on is the selected one
+        function markImage() {
+            const b = active;
+            if (!b || b.gap || b.mode !== 'source' || !b.ui.media) return;
+            const ui = b.ui;
+            const sel = document.activeElement === ui.src ? readSelection(ui.src) : null;
+            const at = sel ? sel.start : clamp(editor.getSelection().start - b.start, 0, b.end - b.start);
+            const k = imageAt(ui.images, at);
+            if (k === ui.selected) return;
+            ui.selected = k;
+            ui.wraps.forEach((wrap, i) => {
+                if (wrap) wrap.classList.toggle('is-selected', i === k);
+            });
+            if (!ui.handles) ui.handles = imageHandles();
+            if (ui.wraps[k]) ui.wraps[k].append(...ui.handles);
+            else ui.handles.forEach((el) => el.remove());
+        }
+
+        // The selected image of the block being edited, or null
+        function selectedImage() {
+            const b = active;
+            if (!b || b.gap || b.kind !== 'image' || b.mode !== 'source' || !b.ui.media) return null;
+            const k = b.ui.selected;
+            const image = b.ui.images[k];
+            const wrap = b.ui.wraps[k];
+            return image && wrap ? { b, k, image, wrap, img: wrap.querySelector('img') } : null;
+        }
+
+        // Click on an image of an image block: edit the block with the caret
+        // at the end of that image's description; the image stays where it
+        // is on screen (so a corner handle can be grabbed at once)
+        function selectImageAt(b, img) {
+            const top = img.getBoundingClientRect().top;
+            if (b !== active) switchTo(b);
+            editing = true;
+            const ui = b.ui;
+            if (b.mode !== 'source' || !ui.media) return;
+            const k = Math.max(0, ui.wraps.findIndex((wrap) => wrap && wrap.contains(img)));
+            const at = b.start + ui.images[k].altEnd;
+            editor.select(at, at);
+            applySelection();
+            if (img.isConnected) scroller.scrollTop += img.getBoundingClientRect().top - top;
+        }
+
+        // The image toolbar: align the selected image, set its width (a
+        // percentage of the text's width; 100 on an image at least that
+        // wide is no width at all), give it another address and
+        // description, or delete it
+        function imageCommand(name, value) {
+            const sel = selectedImage();
+            if (!sel) return;
+            const { b, k, image } = sel;
+            const images = b.ui.images;
+            if (name === 'delete') {
+                deleteImage(b, images, k);
+                return;
+            }
+            const next = { ...image };
+            if (ALIGNS.has(name)) next.align = name;
+            else if (name === 'width') next.width = widthFor(sel, value);
+            else if (name === 'replace') Object.assign(next, { src: value.src, alt: value.alt });
+            if (next.align === image.align && next.width === image.width && next.src === image.src && next.alt === image.alt) return;
+            const written = writeImage(next);
+            let from = image.from;
+            let to = image.to;
+            let insert = written.text;
+            let caret = written.caret;
+            if (written.html) {
+                // HTML runs on to the next blank line: one of several images
+                // gets a block of its own, and a blank line follows it
+                if (k > 0) {
+                    from--;
+                    insert = '\n\n' + insert;
+                    caret += 2;
+                }
+                if (k < images.length - 1) {
+                    to++;
+                    insert += '\n\n';
+                } else if (/^\n[ \t]*[^\s]/.test(text.slice(b.start + to))) {
+                    insert += '\n';
+                }
+            }
+            const at = b.start + from + caret;
+            editing = true;
+            structural = true;
+            editor.replaceRange(b.start + from, b.start + to, insert, at, at, 'command');
+        }
+
+        function widthFor(sel, percent) {
+            if (percent < 100) return percent + '%';
+            const natural = sel.img ? sel.img.naturalWidth : 0;
+            return !natural || natural >= sel.b.ui.media.clientWidth ? null : '100%';
+        }
+
+        // One of several images: its line goes, and the caret to the end of
+        // the description of the image now in its place (else the one before)
+        function deleteImage(b, images, k) {
+            if (images.length === 1) {
+                removeBlock(b);
+                return;
+            }
+            const image = images[k];
+            const from = k > 0 ? image.from - 1 : image.from;
+            const to = k > 0 ? image.to : image.to + 1;
+            const next = images[k + 1];
+            const at = b.start + (next ? next.altEnd - (to - from) : images[k - 1].altEnd);
+            editing = true;
+            structural = true;
+            editor.replaceRange(b.start + from, b.start + to, '', at, at, 'command');
         }
 
         function mountCode(b) {
@@ -1032,6 +1393,15 @@
                 if (composing) return;
                 const html = sourceHtml(b);
                 if (src.innerHTML !== html) src.innerHTML = html;
+                if (b.kind === 'image' || b.ui.media) {
+                    if (!b.ui.typing) {
+                        syncMedia(b);
+                    } else {
+                        // (where the images are in the source is known at once)
+                        b.ui.images = b.kind === 'image' ? imagesOf(sourceOf(b), b.htmlImage) : [];
+                        queueMedia(b);
+                    }
+                }
                 return;
             }
             if (b.mode === 'table') {
@@ -1553,6 +1923,7 @@
             } else {
                 if (b.ui && b.ui.timer) clearTimeout(b.ui.timer);
                 if (b.ui && b.ui.previewTimer) clearTimeout(b.ui.previewTimer);
+                if (b.ui && b.ui.mediaTimer) clearTimeout(b.ui.mediaTimer);
                 renderBlock(b);
                 refreshHeadings();
             }
@@ -1636,6 +2007,7 @@
                 if (input.selectionStart !== start || input.selectionEnd !== end) input.setSelectionRange(start, end);
             }
             markCaretLines();
+            markImage();
             revealCaret();
             notifyCaret();
             updateBubble();
@@ -1949,7 +2321,8 @@
                 return;
             }
 
-            if (PLAIN_ENTER_KINDS.has(b.kind)) {
+            // (An image in HTML: at either end Enter opens an empty line, as below)
+            if (PLAIN_ENTER_KINDS.has(b.kind) || (isHtmlImage(b) && !(collapsed && (start === 0 || start === value.length)))) {
                 insert('\n' + (b.kind === 'code' ? line.match(/^\s*/)[0] : ''));
                 return;
             }
@@ -2195,7 +2568,8 @@
             const s = readSelection(src);
             if (!s) return null;
             const base = textBase(b);
-            return { el: src, kind: b.kind, start: base + s.start, end: base + s.end, collapsed: s.start === s.end };
+            // (an image written in HTML is HTML to the selection toolbar)
+            return { el: src, kind: isHtmlImage(b) ? 'html' : b.kind, start: base + s.start, end: base + s.end, collapsed: s.start === s.end };
         }
 
         // --- Links: the link bubble ---------------------------------------------
@@ -2514,6 +2888,13 @@
             if (e.defaultPrevented || e.button !== 0 || (e.target !== scroller && !root.contains(e.target))) return;
             const el = e.target.closest('.lv-block');
             const b = el && byElement.get(el);
+            // An image of an image block: that one is selected
+            const img = b && b.kind === 'image' && !e.target.closest('.lv-img-handle') ? e.target.closest('img') : null;
+            if (img && blocks.includes(b)) {
+                flush();
+                if (b.el.isConnected && blocks.includes(b)) selectImageAt(b, img);
+                return;
+            }
             if (b && b === active) return;
             // An HTML block's frame is for using the HTML; its toolbar has 编辑源码
             if (e.target.closest('.html-block')) return;
@@ -2557,6 +2938,7 @@
 
         document.addEventListener('selectionchange', () => {
             markCaretLines();
+            if (visible && !composing) markImage();
             scheduleCapture();
         });
         // Selection changes inside a textarea don't reach the document everywhere
@@ -2681,6 +3063,29 @@
             tableCommand(name) {
                 flush();
                 tableCommand(name);
+            },
+
+            // The image toolbar: the selected image of the image block being
+            // edited (its box, alignment and width; full: it is as wide as
+            // the text), while its source has focus
+            imageState() {
+                const sel = visible && !composing ? selectedImage() : null;
+                if (!sel || document.activeElement !== sel.b.ui.src) return null;
+                const { image, wrap } = sel;
+                const full = wrap.getBoundingClientRect().width >= sel.b.ui.media.clientWidth - 0.5;
+                return { el: sel.b.el, wrap, align: image.align, width: image.width, full, src: image.src, alt: image.alt };
+            },
+            // …its box, while focus is elsewhere (in the dialog that replaces it)
+            imageRect() {
+                const sel = visible ? selectedImage() : null;
+                return sel ? onScreen(sel.wrap.getBoundingClientRect()) : null;
+            },
+            // name: left, center, right, width (value: a percentage),
+            // replace (value: { src, alt }) or delete
+            imageCommand(name, value) {
+                flush();
+                captureSelection();
+                imageCommand(name, value);
             },
 
             // Annotations: the blocks that overlap [from, to) (where they
