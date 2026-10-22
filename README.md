@@ -7,7 +7,7 @@ A lightweight Markdown editor that runs entirely in the browser. Write in live m
 ## Features
 
 **Live mode (实时)**
-- The document is shown rendered; the block the caret is in shows its Markdown markers, keeping its size, weight and colour, and is rendered again as soon as the caret leaves it
+- The document is shown rendered; the block the caret is in shows its Markdown markers, keeping its size, weight and colour, and is rendered again as soon as the caret leaves it. In a list or a quote only the lines with the caret show their markers; the others keep their bullets, numbers and checkboxes
 - Click a block to edit it there; the arrow keys move between blocks. Enter starts a new paragraph (or continues a list or quote), Shift+Enter adds a line break, Esc stops editing
 - Type `/` on an empty line (or click the **+** beside it) for a menu of blocks to insert — headings, lists, quote, table, code, formula, HTML, table of contents — filtered as you type, in Chinese, English or pinyin
 - Select text for a toolbar above it: bold, italic, strikethrough, highlight, inline code, inline formula, link, clear formatting, and **标注**

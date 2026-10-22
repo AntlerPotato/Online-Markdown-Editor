@@ -122,6 +122,8 @@
         onSlashMenu: (open) => {
             slashShown = open;
             updateQuickBar();
+            // (the handle of its line is a "+" while it is open)
+            liveBlocks.refresh();
         }
     });
     // The handle beside each block and its menu
