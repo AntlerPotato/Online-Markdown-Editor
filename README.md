@@ -17,6 +17,7 @@ A lightweight Markdown editor that runs entirely in the browser. Write in live m
 - Code blocks are edited in a code editor with line numbers; the language chip at its top left opens a searchable list of languages; formula blocks show a live preview under their LaTeX, and an inline formula shows one while the caret is in it
 - `html` code blocks run as web pages, in a frame sandboxed with only `allow-scripts`: their scripts work, but they can't reach the editor's page or its storage. A frame is made when it scrolls near the view and grows with its content (up to 80% of the view's height); its bottom-right corner has zoom (50–200%), full screen, **</>** to edit the code, and a grip to set the height by hand (double-click it to follow the content again). While the code is being edited, the 安全渲染 label says what the sandbox allows and 预览 shows the result under the code. The editor's colours are there as CSS variables (`var(--accent)`, `var(--text)` …) and follow the theme
 - Click a task's checkbox to tick it; Ctrl/⌘-click a link to open it
+- Blocks that render to nothing, such as reference definitions (`[id]: https://…`), show their source in grey
 - Typing `` ``` `` or `$$` on a line of its own and pressing Enter creates a code or formula block
 - 打字机 (typewriter) keeps the caret line in the middle of the screen; 专注 (focus) fades every block but the one being edited
 - Fast on long documents: only the edited block is re-rendered, rendered blocks are cached, and off-screen blocks skip layout
