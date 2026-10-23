@@ -699,8 +699,9 @@
     // onSlash(query, el) opens or filters the slash menu for the source
     // editor el (query null: close it) and returns false when nothing
     // matches; onSelection tells the selection toolbar to look again;
-    // onKey(key) lets them take a key press first (true: taken).
-    MDE.createLive = function ({ root, scroller, editor, onCaret, onRender, onSlash, onSelection, onKey }) {
+    // onKey(key) lets them take a key press first (true: taken);
+    // toast(message) confirms a copy.
+    MDE.createLive = function ({ root, scroller, editor, onCaret, onRender, onSlash, onSelection, onKey, toast }) {
         const cache = new Map();
         const byElement = new WeakMap();
         let blocks = [];
@@ -723,6 +724,8 @@
         let rebuildTimer = 0;
         let selectionFrame = 0;
         let slash = null;          // the slash menu is open for this block element: { el }
+        let cellDrag = null;       // a press in the table being edited, until the button is let go (see "Selecting cells")
+        let cellDragEnded = false; // …and just let go: the click that follows edits no other block
         const settings = { typewriter: false, focusMode: false, htmlPreview: false };
 
         const bubble = document.createElement('div');
@@ -773,7 +776,11 @@
                 case 'math': return '公式块';
                 case 'list': return b.task ? '任务列表' : b.ordered ? '有序列表' : '无序列表';
                 case 'quote': return '引用';
-                case 'table': return b.mode === 'table' && b.ui.cell ? `表格 · 第 ${b.ui.cell.r + 1} 行第 ${b.ui.cell.c + 1} 列` : '表格';
+                case 'table': {
+                    if (b.mode !== 'table' || !b.ui.cell) return '表格';
+                    const range = rangeOf(b);
+                    return range ? `表格 · 已选 ${range.rows * range.columns} 格` : `表格 · 第 ${b.ui.cell.r + 1} 行第 ${b.ui.cell.c + 1} 列`;
+                }
                 case 'hr': return '分隔线';
                 case 'toc': return '目录';
                 case 'image': return '图片';
@@ -1675,7 +1682,8 @@
                 base: 0,
                 text: '',
                 rendered: null,
-                renderedHash: null
+                renderedHash: null,
+                range: null
             };
         }
 
@@ -1782,9 +1790,7 @@
             }
             editing = true;
             openCell(b, r, c);
-            const src = b.ui.src;
-            const hit = pointFromXY(x, y);
-            const offset = hit && src.contains(hit.node) ? offsetIn(src, hit.node, hit.offset) : src.textContent.length;
+            const offset = offsetAtPoint(b.ui.src, x, y);
             editor.select(b.ui.base + offset, b.ui.base + offset);
             applySelection();
         }
@@ -1988,9 +1994,254 @@
             return cells[Math.min(c, cells.length - 1)].from;
         }
 
+        // --- Selecting cells -------------------------------------------------
+        // Pressing on a cell and dragging to another, Shift+click, or
+        // Shift+an arrow key at the edge of the open cell selects a
+        // rectangle of cells. The open cell is one corner (ui.cell, it keeps
+        // focus and a caret, at `at` in its text) and ui.range = { r, c,
+        // at } the other. The cells are copied as a table, cleared, aligned
+        // or deleted together; any other key, typing, pasting or a click
+        // lets go of them first.
+
+        // The rectangle: rows top…bottom, columns left…right (null: none)
+        function rangeOf(b) {
+            const ui = b.ui;
+            if (!ui || !ui.range || !ui.cell) return null;
+            const top = Math.min(ui.cell.r, ui.range.r);
+            const bottom = Math.max(ui.cell.r, ui.range.r);
+            const left = Math.min(ui.cell.c, ui.range.c);
+            const right = Math.max(ui.cell.c, ui.range.c);
+            return { top, bottom, left, right, rows: bottom - top + 1, columns: right - left + 1 };
+        }
+
+        function paintRange(b) {
+            const range = rangeOf(b);
+            const table = b.ui.table;
+            if (!table) return;
+            table.classList.toggle('has-range', !!range);
+            Array.from(table.rows).forEach((row, r) => {
+                Array.from(row.cells).forEach((td, c) => {
+                    td.classList.toggle('is-picked', !!range && r >= range.top && r <= range.bottom && c >= range.left && c <= range.right);
+                });
+            });
+        }
+
+        function rangeChanged(b) {
+            paintRange(b);
+            hideBubble();
+            notifyCaret();
+            notifySelection();
+        }
+
+        // Select from the open cell to (r, c); there again, no cells are
+        // selected. at: where the caret stays (default: where the
+        // selection in the open cell started)
+        function setRange(b, r, c, at = null) {
+            const ui = b.ui;
+            if (!ui.cell) return;
+            if (r === ui.cell.r && c === ui.cell.c) {
+                clearRange(b);
+                return;
+            }
+            if (ui.range && ui.range.r === r && ui.range.c === c) return;
+            if (!ui.range) {
+                const s = readSelection(ui.src);
+                ui.range = { r, c, at: at !== null ? at : s ? (s.backward ? s.end : s.start) : 0 };
+            } else {
+                Object.assign(ui.range, { r, c });
+            }
+            rangeChanged(b);
+        }
+
+        function clearRange(b) {
+            if (!b || b.mode !== 'table' || !b.ui.range) return false;
+            b.ui.range = null;
+            rangeChanged(b);
+            return true;
+        }
+
+        // The cell under a point, or the nearest one at the table's edge
+        function cellFromPoint(b, x, y) {
+            const rows = Array.from(b.ui.table.rows);
+            let r = rows.findIndex((row) => y < row.getBoundingClientRect().bottom);
+            if (r === -1) r = rows.length - 1;
+            const cells = Array.from(rows[r].cells).slice(0, b.ui.parsed.cols);
+            let c = cells.findIndex((td) => x < td.getBoundingClientRect().right);
+            if (c === -1) c = cells.length - 1;
+            return { r, c };
+        }
+
+        // The text offset under a point in a source editor (its start or
+        // end when the point is outside it)
+        function offsetAtPoint(src, x, y) {
+            const hit = pointFromXY(x, y);
+            if (hit && src.contains(hit.node)) return offsetIn(src, hit.node, hit.offset);
+            const box = src.getBoundingClientRect();
+            return y < box.top || (y <= box.bottom && x < box.left) ? 0 : src.textContent.length;
+        }
+
+        // Keep a cell in view (in a wide table, sideways too)
+        function revealCell(td) {
+            const box = scroller.getBoundingClientRect();
+            const rect = td.getBoundingClientRect();
+            if (rect.top < box.top + 32) scroller.scrollTop -= box.top + 32 - rect.top;
+            else if (rect.bottom > box.bottom - 32) scroller.scrollTop += rect.bottom - box.bottom + 32;
+            const wrap = td.closest('.table-wrap');
+            if (!wrap) return;
+            const outer = wrap.getBoundingClientRect();
+            if (rect.left < outer.left) wrap.scrollLeft -= outer.left - rect.left;
+            else if (rect.right > outer.right) wrap.scrollLeft += rect.right - outer.right;
+        }
+
+        const ARROWS = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+        const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'AltGraph', 'Meta', 'OS', 'CapsLock', 'NumLock', 'ScrollLock', 'Fn', 'ContextMenu']);
+
+        // Shift+an arrow key: from the edge of the open cell's text (the end
+        // the selection moves) the cells start being selected, then each
+        // press takes in one more row or column. True when taken.
+        function extendRange(b, key) {
+            const ui = b.ui;
+            const [dr, dc] = ARROWS[key];
+            const rows = ui.table.rows.length;
+            const cols = ui.parsed.cols;
+            if (ui.range) {
+                const r = clamp(ui.range.r + dr, 0, rows - 1);
+                const c = clamp(ui.range.c + dc, 0, cols - 1);
+                setRange(b, r, c);
+                const td = tdAt(b, r, c);
+                if (td) revealCell(td);
+                return true;
+            }
+            const src = ui.src;
+            const s = readSelection(src);
+            if (!s) return false;
+            const focus = s.backward ? s.start : s.end;
+            const length = src.textContent.length;
+            let atEdge;
+            if (key === 'ArrowLeft') atEdge = focus === 0;
+            else if (key === 'ArrowRight') atEdge = focus === length;
+            else {
+                // The first or last line of a cell whose text wraps
+                const caret = caretRect(src, focus);
+                const edge = caretRect(src, dr < 0 ? 0 : length);
+                const mid = (caret.top + caret.bottom) / 2;
+                atEdge = !length || (dr < 0 ? mid <= edge.bottom : mid >= edge.top);
+            }
+            const r = ui.cell.r + dr;
+            const c = ui.cell.c + dc;
+            if (!atEdge || r < 0 || r >= rows || c < 0 || c >= cols) return false;
+            writeSelection(src, focus, focus);
+            setRange(b, r, c, focus);
+            const td = tdAt(b, r, c);
+            if (td) revealCell(td);
+            return true;
+        }
+
+        // Keys while cells are selected (and Shift+arrows to start): true
+        // when taken. Copy and cut keys go on to the copy and cut events;
+        // any other key lets go of the cells first and then does what it
+        // does in the open cell.
+        function cellKey(e, b) {
+            const mods = e.ctrlKey || e.metaKey || e.altKey;
+            if (ARROWS[e.key] && e.shiftKey && !mods) return extendRange(b, e.key);
+            if (!b.ui.range || MODIFIER_KEYS.has(e.key)) return false;
+            const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+            const clipboard = ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (key === 'c' || key === 'x'))
+                || (e.ctrlKey && key === 'Insert') || (e.shiftKey && !mods && key === 'Delete');
+            if (clipboard) return false;
+            if (e.key === 'Escape' && !mods && !e.shiftKey) {
+                clearRange(b);
+                return true;
+            }
+            if ((e.key === 'Delete' || e.key === 'Backspace') && !mods && !e.shiftKey) {
+                flush();
+                if (active === b && b.mode === 'table') clearCells(b);
+                return true;
+            }
+            clearRange(b);
+            return false;
+        }
+
+        // Empty the selected cells (one undo step); they stay selected
+        function clearCells(b) {
+            const range = rangeOf(b);
+            if (!range) return;
+            const { rows } = b.ui.parsed;
+            const cells = [];
+            for (let r = range.top; r <= range.bottom; r++) {
+                for (let c = range.left; c <= range.right; c++) {
+                    const cell = rows[r] && rows[r].cells[c];
+                    if (cell && cell.to > cell.from) cells.push(cell);
+                }
+            }
+            if (!cells.length) return;
+            const source = sourceOf(b);
+            let next = source;
+            cells.sort((x, y) => y.from - x.from).forEach((cell) => {
+                next = next.slice(0, cell.from) + next.slice(cell.to);
+            });
+            // The caret: the start of the open cell
+            const open = rows[b.ui.cell.r].cells[b.ui.cell.c];
+            const at = open.from - cells.filter((cell) => cell.to <= open.from).reduce((sum, cell) => sum + cell.to - cell.from, 0);
+            replaceTable(b, next, b.start + at);
+        }
+
+        // The selected cells as a Markdown table (with the header of their
+        // columns when it isn't selected, and their alignment) and as an
+        // HTML table of just those cells
+        function cellsAsTable(b) {
+            const range = rangeOf(b);
+            const { rows, delimiter } = b.ui.parsed;
+            const columns = [];
+            for (let c = range.left; c <= range.right; c++) columns.push(c);
+            const body = [];
+            for (let r = Math.max(range.top, 1); r <= range.bottom; r++) body.push(r);
+            const textOf = (r, c) => {
+                const cell = rows[r] && rows[r].cells[c];
+                return cell ? cell.text.trim() : '';
+            };
+            const line = (r) => '| ' + columns.map((c) => textOf(r, c)).join(' | ') + ' |';
+            const marks = columns.map((c) => {
+                const cell = delimiter && delimiter.cells[c];
+                return cell ? cell.text.trim() : '---';
+            });
+            const text = [line(0), '|' + marks.join('|') + '|'].concat(body.map(line)).join('\n');
+            const htmlOf = (tag, r, c) => {
+                const inner = renderedCell(b, r, c);
+                const row = b.ui.rendered && b.ui.rendered.rows[r];
+                const align = row && row.cells[c] ? row.cells[c].getAttribute('align') : null;
+                return `<${tag}${align ? ` align="${align}"` : ''}>${inner}</${tag}>`;
+            };
+            const tr = (tag, r) => '<tr>' + columns.map((c) => htmlOf(tag, r, c)).join('') + '</tr>';
+            let html = '<table>';
+            if (range.top === 0) html += '<thead>' + tr('th', 0) + '</thead>';
+            if (body.length) html += '<tbody>' + body.map((r) => tr('td', r)).join('') + '</tbody>';
+            html += '</table>';
+            return { text, html, count: range.rows * range.columns };
+        }
+
+        // Ctrl+C / Ctrl+X while cells are selected (the copy and cut events
+        // also come with nothing selected in the open cell)
+        function copyCells(e, cut) {
+            const b = active;
+            if (!b || b.mode !== 'table' || !b.ui.range || !inSource(b, e.target) || !e.clipboardData) return;
+            e.preventDefault();
+            const { text: plain, html, count } = cellsAsTable(b);
+            e.clipboardData.setData('text/plain', plain);
+            e.clipboardData.setData('text/html', html);
+            if (cut) {
+                flush();
+                if (active === b && b.mode === 'table') clearCells(b);
+            }
+            if (toast) toast(cut ? `已剪切 ${count} 格` : `已复制 ${count} 格`);
+        }
+
         // The table toolbar: align the caret's column, add a row below or a
         // column to the right of its cell, delete its row (not the header)
-        // or its column (not the last one), or delete the table
+        // or its column (not the last one), or delete the table. With cells
+        // selected: align all their columns, add the row under them or the
+        // column right of them, delete all their rows (not with the header)
+        // or columns (not all of them).
         function tableCommand(name) {
             const b = active;
             if (!b || b.mode !== 'table' || !b.ui.cell) return;
@@ -2000,30 +2251,39 @@
                 removeBlock(b);
                 return;
             }
+            const range = rangeOf(b) || { top: r, bottom: r, left: c, right: c, rows: 1, columns: 1 };
             const source = sourceOf(b);
             const offset = clamp(editor.getSelection().start - b.ui.base, 0, b.ui.text.length);
             let next = source;
             let at = null;
+            let keep = null;
             if (name === 'row') {
-                next = MDE.table.insertRow(source, r, cols);
-                at = MDE.table.parse(next).rows[r + 1].cells[c].from;
+                next = MDE.table.insertRow(source, range.bottom, cols);
+                at = MDE.table.parse(next).rows[range.bottom + 1].cells[c].from;
             } else if (name === 'column') {
-                next = MDE.table.insertColumn(source, c);
-                at = MDE.table.parse(next).rows[r].cells[c + 1].from;
+                next = MDE.table.insertColumn(source, range.right);
+                at = MDE.table.parse(next).rows[r].cells[range.right + 1].from;
             } else if (name === 'delete-row') {
                 // The caret goes to the row that comes up (the one above after the last)
-                if (r === 0) return;
-                next = MDE.table.deleteRow(source, r);
-                at = cellStart(next, r < rows.length - 1 ? r : r - 1, c);
+                if (range.top === 0) return;
+                next = MDE.table.deleteRow(source, range.top, range.rows);
+                at = cellStart(next, range.top < rows.length - range.rows ? range.top : range.top - 1, c);
             } else if (name === 'delete-column') {
-                if (cols < 2) return;
-                next = MDE.table.deleteColumn(source, c);
-                at = cellStart(next, r, c < cols - 1 ? c : c - 1);
+                if (range.columns === cols) return;
+                next = MDE.table.deleteColumn(source, range.left, range.columns);
+                at = cellStart(next, r, range.left < cols - range.columns ? range.left : range.left - 1);
             } else {
-                next = MDE.table.setAlign(source, c, name);
+                for (let k = range.left; k <= range.right; k++) next = MDE.table.setAlign(next, k, name);
                 at = MDE.table.parse(next).rows[r].cells[c].from + offset;
+                // (the cells stay selected)
+                keep = b.ui.range && { ...b.ui.range, at: offset };
             }
-            if (next !== source) replaceTable(b, next, b.start + at);
+            if (next === source) return;
+            replaceTable(b, next, b.start + at);
+            if (keep && active === b && b.mode === 'table' && b.ui.cell && b.ui.cell.r === r && b.ui.cell.c === c) {
+                b.ui.range = keep;
+                rangeChanged(b);
+            }
         }
 
         // Write a code/formula editor back into the document
@@ -2048,6 +2308,7 @@
         function leave(b) {
             hideBubble();
             closeSlash();
+            if (cellDrag && cellDrag.b === b) cellDrag = null;
             if (b.gap) {
                 b.el.remove();
             } else {
@@ -2118,6 +2379,12 @@
             const focus = !suppressFocus && shouldFocus();
             if (b.mode === 'table') {
                 const { r, c } = cellAt(b, sel.start);
+                // The caret left the cell the selected cells go from (or
+                // selects text): they are let go
+                if (b.ui.range && (sel.start !== sel.end || !b.ui.cell || r !== b.ui.cell.r || c !== b.ui.cell.c)) {
+                    b.ui.range = null;
+                    paintRange(b);
+                }
                 openCell(b, r, c);
             }
             const base = textBase(b);
@@ -2126,6 +2393,7 @@
                 const length = src.textContent.length;
                 const start = clamp(sel.start - base, 0, length);
                 const end = clamp(sel.end - base, 0, length);
+                if (b.mode === 'table' && b.ui.range) b.ui.range.at = start;
                 if (focus && document.activeElement !== src) {
                     ignoreFocus = true;
                     src.focus({ preventScroll: true });
@@ -2179,7 +2447,10 @@
                 if (s) range = b.gap ? { start: b.pos, end: b.pos } : { start: b.start + s.start, end: b.start + s.end };
             } else if (b.mode === 'table') {
                 const s = b.ui.src && readSelection(b.ui.src);
-                if (s) range = { start: b.ui.base + s.start, end: b.ui.base + s.end };
+                // (while cells are selected the caret stays where it was,
+                // whatever a drag does to the text selection)
+                const at = b.ui.range && b.ui.base + b.ui.range.at;
+                if (s) range = b.ui.range ? { start: at, end: at } : { start: b.ui.base + s.start, end: b.ui.base + s.end };
             } else if (b.ui && document.activeElement === b.ui.input) {
                 const offset = b.start + b.ui.parts.open.length;
                 range = {
@@ -2586,7 +2857,7 @@
         function updateBubble() {
             const b = active;
             const src = textEditor(b);
-            if (!src || composing) return hideBubble();
+            if (!src || composing || (b.mode === 'table' && b.ui.range)) return hideBubble();
             const sel = readSelection(src);
             if (!sel || sel.start !== sel.end) return hideBubble();
             const value = src.textContent;
@@ -2719,11 +2990,11 @@
         }
 
         // What the selection toolbar needs to know, or null when there is no
-        // selection in a source editor that has focus
+        // selection in a source editor that has focus (or cells are selected)
         function selectionState() {
             const b = active;
             const src = textEditor(b);
-            if (!visible || !src || b.gap || composing || document.activeElement !== src) return null;
+            if (!visible || !src || b.gap || composing || document.activeElement !== src || (b.mode === 'table' && b.ui.range)) return null;
             const s = readSelection(src);
             if (!s) return null;
             const base = textBase(b);
@@ -2739,7 +3010,7 @@
         function caretLink() {
             const b = active;
             const src = textEditor(b);
-            if (!visible || !src || b.gap || composing || document.activeElement !== src || !bubble.hidden) return null;
+            if (!visible || !src || b.gap || composing || document.activeElement !== src || !bubble.hidden || (b.mode === 'table' && b.ui.range)) return null;
             const s = readSelection(src);
             if (!s || s.start !== s.end) return null;
             const link = MDE.links.at(src.textContent, s.start, s.end, resolveRef);
@@ -2890,6 +3161,7 @@
 
         root.addEventListener('compositionstart', () => {
             composing = true;
+            clearRange(active);
             hideBubble();
             notifySelection();
         });
@@ -2912,6 +3184,8 @@
                 return;
             }
             if (!source || composing || e.isComposing) return;
+            // Typing goes into the open cell, the selected cells are let go
+            clearRange(b);
             // Usually handled on keydown; this catches virtual keyboards
             if (e.inputType === 'insertParagraph' || e.inputType === 'insertLineBreak') {
                 e.preventDefault();
@@ -2943,9 +3217,13 @@
             const b = active;
             if (!inSource(b, e.target)) return;
             e.preventDefault();
+            clearRange(b);
             const data = (e.clipboardData && e.clipboardData.getData('text/plain')) || '';
             if (data) insertText(data.replace(/\r\n?/g, '\n'), 'paste');
         });
+
+        root.addEventListener('copy', (e) => copyCells(e, false));
+        root.addEventListener('cut', (e) => copyCells(e, true));
 
         root.addEventListener('drop', (e) => {
             if (e.dataTransfer && e.dataTransfer.files.length) e.preventDefault();
@@ -2964,6 +3242,11 @@
             const field = inInput(b, e.target) || (b.mode === 'code' && e.target === b.ui.lang);
             if (!source && !field) return;
             if (e.isComposing || composing || e.keyCode === 229) return;
+            // Selected cells take a few keys (and Shift+arrows select them)
+            if (source && b.mode === 'table' && cellKey(e, b)) {
+                e.preventDefault();
+                return;
+            }
             const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
             // The slash menu and the selection toolbar get their keys first
             if (source && plain && onKey && onKey(e.key)) {
@@ -3023,13 +3306,13 @@
         // In the table being edited, a press on another cell opens that
         // cell; after a press elsewhere in the table (its border, its
         // scrollbar) focus goes back to the open cell. Ctrl/⌘ + click still
-        // follows a link.
+        // follows a link. Dragging on to other cells, or Shift+click,
+        // selects cells (see "Selecting cells").
         root.addEventListener('mousedown', (e) => {
             const b = active;
             if (e.button !== 0 || !b || b.mode !== 'table' || !b.el.contains(e.target)) return;
             if ((e.ctrlKey || e.metaKey) && e.target.closest('a[href]')) return;
             const td = e.target.closest('td, th');
-            if (td && td === b.ui.td) return;
             if (!td || !b.ui.table.contains(td)) {
                 requestAnimationFrame(() => {
                     const src = active === b && b.mode === 'table' ? b.ui.src : null;
@@ -3037,14 +3320,67 @@
                 });
                 return;
             }
+            const r = td.parentElement.rowIndex;
+            const c = td.cellIndex;
+            if (e.shiftKey && b.ui.cell && (td !== b.ui.td || b.ui.range) && c < b.ui.parsed.cols) {
+                e.preventDefault();
+                flush();
+                if (active !== b || b.mode !== 'table') return;
+                setRange(b, r, c);
+                cellDrag = { b, native: false, at: null };
+                return;
+            }
+            clearRange(b);
+            // In the open cell's text the browser selects it (a press
+            // beside it, in the cell's padding, puts the caret there)
+            if (td === b.ui.td && b.ui.src && b.ui.src.contains(e.target)) {
+                cellDrag = { b, native: true, at: null };
+                return;
+            }
             e.preventDefault();
             flush();
-            if (active === b && b.mode === 'table') clickCell(b, td, e.clientX, e.clientY);
+            if (active !== b || b.mode !== 'table') return;
+            clickCell(b, td, e.clientX, e.clientY);
+            const s = active === b && b.mode === 'table' && b.ui.src ? readSelection(b.ui.src) : null;
+            cellDrag = s ? { b, native: false, at: s.start } : null;
         });
+
+        // The button held down after that press: over another cell the cells
+        // between are selected; back over the open cell its text is (the
+        // browser does that only when the press was in the open cell)
+        window.addEventListener('mousemove', (e) => {
+            const drag = cellDrag;
+            if (!drag) return;
+            const b = active;
+            if (!(e.buttons & 1) || b !== drag.b || b.mode !== 'table' || !b.ui.cell) {
+                endCellDrag();
+                return;
+            }
+            const { r, c } = cellFromPoint(b, e.clientX, e.clientY);
+            if (r !== b.ui.cell.r || c !== b.ui.cell.c) setRange(b, r, c, drag.at);
+            else clearRange(b);
+            if (!b.ui.range && !drag.native && drag.at !== null) writeSelection(b.ui.src, drag.at, offsetAtPoint(b.ui.src, e.clientX, e.clientY));
+        });
+
+        function endCellDrag() {
+            const drag = cellDrag;
+            cellDrag = null;
+            if (!drag) return;
+            // (the click that follows lands wherever the button was let go,
+            // perhaps on another block)
+            cellDragEnded = true;
+            setTimeout(() => { cellDragEnded = false; });
+            const b = active;
+            // The open cell keeps only its caret (not what the drag selected in it)
+            if (b === drag.b && b.mode === 'table' && b.ui.range && b.ui.src) writeSelection(b.ui.src, b.ui.range.at, b.ui.range.at);
+        }
+
+        window.addEventListener('mouseup', endCellDrag);
 
         scroller.addEventListener('click', (e) => {
             // Only the document and the margins around it (not the block handle)
             if (e.defaultPrevented || e.button !== 0 || (e.target !== scroller && !root.contains(e.target))) return;
+            if (cellDragEnded) return;
             const el = e.target.closest('.lv-block');
             const b = el && byElement.get(el);
             // An image of an image block: that one is selected
@@ -3177,6 +3513,8 @@
                 captureSelection();
                 const b = active;
                 if (b && b.mode === 'table') {
+                    // (on the open cell, not on the selected cells)
+                    clearRange(b);
                     if (LIST_COMMANDS.has(name) && b.ui.cell) cellList(b, name);
                     if (LINE_COMMANDS.has(name) || LIST_COMMANDS.has(name)) return false;
                     if (BLOCK_COMMANDS.has(name)) editor.select(b.end, b.end);
@@ -3223,12 +3561,21 @@
                 setCodeLanguage(lang);
             },
 
-            // The table toolbar
+            // The table toolbar: the caret's cell, or the selected cells
+            // (range; align is theirs when all their columns have the same
+            // one, null counting as left, else 'mixed')
             tableState() {
                 const b = active;
                 if (!visible || !b || b.mode !== 'table' || !b.ui.cell || document.activeElement !== b.ui.src) return null;
                 const { r, c } = b.ui.cell;
-                return { el: b.el, td: b.ui.td, align: b.ui.parsed.align[c] || null, row: r, cols: b.ui.parsed.cols };
+                const { align, cols } = b.ui.parsed;
+                const range = rangeOf(b);
+                let shared = align[c] || null;
+                if (range) {
+                    const list = align.slice(range.left, range.right + 1).map((a) => a || 'left');
+                    shared = list.every((a) => a === list[0]) ? list[0] : 'mixed';
+                }
+                return { el: b.el, td: b.ui.td, align: shared, row: r, cols, range };
             },
             tableCommand(name) {
                 flush();

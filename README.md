@@ -13,6 +13,7 @@ A lightweight Markdown editor that runs entirely in the browser. Write in live m
 - Select text for a toolbar above it: bold, italic, strikethrough, highlight, inline code, inline formula, link, clear formatting, and **标注**
 - A handle beside each block: drag it to move the block, or click it for a menu (turn it into a paragraph, heading, quote, list or code block; insert below; copy; copy as Markdown; delete). Ctrl+Enter opens an empty line below the block being edited
 - Tables are edited cell by cell: Tab and Enter move between cells and add a row at the end, the arrow keys cross cell edges, Backspace at the start of an empty row removes it, and a toolbar above the table sets the column's alignment, inserts or deletes rows and columns, or deletes the table. A line like `| Name | Age |` becomes a table when you press Enter at its end
+- In the table being edited, drag across cells (or Shift+click, or Shift+an arrow key at the edge of a cell's text) to select several: Ctrl+C copies them as a Markdown table, with an HTML table beside it for spreadsheets and word processors; Ctrl+X cuts them, Delete empties them, and the toolbar's alignment and delete buttons work on all of them. Esc or a click lets go
 - Click an image for a toolbar above it: align it left, centre or right, make it 50% or 100% of the text's width, replace it or delete it; drag its corners to set the width (in steps of 5%). An image with a width or alignment is written as HTML that GitHub also shows: `<img src="…" alt="…" width="50%">`, in `<p align="center">` when centred. Back at full width on the left it is `![…](…)` again
 - Hovering over a link, or putting the caret in it, shows a bubble to open, edit, copy or remove it; Ctrl+K edits the link the caret is in
 - Code blocks are edited in a code editor with line numbers; the language chip at its top left opens a searchable list of languages; formula blocks show a live preview under their LaTeX, and an inline formula shows one while the caret is in it
@@ -80,6 +81,7 @@ HTML written straight into the document (not in an `html` code block) is cleaned
 | Command palette | `Ctrl+Shift+P` | `⌘⇧P` |
 | Live mode: an empty line below the block | `Ctrl+Enter` | `⌘↩` |
 | Live mode: stop editing the block | `Esc` | `Esc` |
+| Live mode, in a table: select cells | `Shift`+click, or `Shift+←↑→↓` at the edge of a cell's text | `⇧`+click, or `⇧←↑→↓` |
 
 ## Getting started
 
@@ -127,7 +129,7 @@ assets/
     menus.css           Menus and popovers: file, paragraph style, more tools, phone menu, table picker, link dialog, slash menu, floating toolbars, block menu, link bubble, language menu, command palette, annotation dialog, toast
     editor.css          Source editor (transparent textarea over a highlighted backdrop)
     preview.css         Rendered Markdown, code theme, KaTeX tweaks, HTML block frames, annotation marks
-    live.css            Live mode: blocks, the block being edited, code, formula and table editing, images and their corner handles, block handles
+    live.css            Live mode: blocks, the block being edited, code, formula and table editing (and selected cells), images and their corner handles, block handles
   js/
     store.js            Safe localStorage wrapper (settings and autosave)
     typography.js       Typography settings (page width, fonts, line spacing), applied before the first paint
@@ -139,7 +141,7 @@ assets/
     editor.js           Editor component: backdrop, caret tracking, undo/redo; holds the document for every view
     table.js            Table text: cells, alignment, inserting and deleting rows and columns
     links.js            Links in Markdown text: finding, editing and removing them
-    live.js             Live mode: splits the document into blocks, caches their HTML, edits one block at a time; images' width and alignment
+    live.js             Live mode: splits the document into blocks, caches their HTML, edits one block at a time; table cells (and selecting them), images' width and alignment
     commands.js         Formatting commands (wrap, headings, lists, tables, links)
     popover.js          Menu and popover positioning and keyboard handling
     live-tools.js       Live mode: slash menu, selection, table and image toolbars, link bubble, code language menu

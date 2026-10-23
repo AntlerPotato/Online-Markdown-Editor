@@ -109,27 +109,33 @@
         }).join('\n');
     }
 
-    // Without rows[row] (a body row: row >= 1)
-    function deleteRow(source, row) {
+    // Without rows[row] and the count - 1 rows after it (body rows: row >= 1)
+    function deleteRow(source, row, count = 1) {
         const lines = source.split('\n');
-        lines.splice(row + 1, 1);
+        lines.splice(row + 1, count);
         return lines.join('\n');
     }
 
-    // Without column `col`, in every line that has it. A line without
-    // pipes at its ends gets them first, so a table left with one column
-    // is still a table.
-    function deleteColumn(source, col) {
+    // Without column `col` of a line, if it has one. A line without pipes
+    // at its ends gets them first, so a table left with one column is
+    // still a table.
+    function withoutColumn(line, col) {
+        const { cells } = splitRow(line);
+        if (!cells[col]) return line;
+        // (a short row whose only cell goes keeps an empty one)
+        if (cells.length === 1) return line.slice(0, line.search(/\S/)) + '|' + NEW_CELL;
+        const first = line.search(/\S/);
+        if (line[first] !== '|') line = line.slice(0, first) + '| ' + line.slice(first);
+        if (!splitRow(line).trail) line = line.trimEnd() + ' |';
+        const cell = splitRow(line).cells[col];
+        return line.slice(0, cell.start) + line.slice(cell.end + 1);
+    }
+
+    // Without columns col … col + count - 1, in every line
+    function deleteColumn(source, col, count = 1) {
         return source.split('\n').map((line) => {
-            const { cells } = splitRow(line);
-            if (!cells[col]) return line;
-            // (a short row whose only cell goes keeps an empty one)
-            if (cells.length === 1) return line.slice(0, line.search(/\S/)) + '|' + NEW_CELL;
-            const first = line.search(/\S/);
-            if (line[first] !== '|') line = line.slice(0, first) + '| ' + line.slice(first);
-            if (!splitRow(line).trail) line = line.trimEnd() + ' |';
-            const cell = splitRow(line).cells[col];
-            return line.slice(0, cell.start) + line.slice(cell.end + 1);
+            for (let k = col + count - 1; k >= col; k--) line = withoutColumn(line, k);
+            return line;
         }).join('\n');
     }
 

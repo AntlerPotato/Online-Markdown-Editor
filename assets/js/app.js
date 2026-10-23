@@ -97,7 +97,8 @@
             liveBlocks.refresh();
             annotate.redraw();
         },
-        onKey: (key) => liveTools.key(key)
+        onKey: (key) => liveTools.key(key),
+        toast: showToast
     });
     // The slash menu, the toolbars, the link bubble and the code language menu
     const liveTools = MDE.createLiveTools({
