@@ -490,6 +490,22 @@
         return lines;
     }
 
+    // A bare address is a link only after what GitHub allows before it:
+    // "www." at the start or after white space or * _ ~ (, and "http://"
+    // (https, ftp) not straight after a letter. marked links them after
+    // anything ("中www.a.com"); those become text again. links.js has the
+    // same rule.
+    const BARE_LINK = /^(?:(?:https?|ftp):\/\/|www\.)/i;
+    const bareAllowed = (raw, before) => (/^www\./i.test(raw) ? !before || /[ \t\n\r\f\v*_~(]/.test(before) : !/[A-Za-z]/.test(before));
+
+    function unlinkBare(tokens) {
+        tokens.forEach((token, i) => {
+            if (token.type !== 'link' || !BARE_LINK.test(token.raw)) return;
+            const before = i ? (tokens[i - 1].raw || '').slice(-1) : '';
+            if (!bareAllowed(token.raw, before)) tokens[i] = { type: 'text', raw: token.raw, text: escapeHtml(token.raw) };
+        });
+    }
+
     // --- Public API ---------------------------------------------------------
 
     // options.toc: headings for [TOC] (live mode renders one block at a time,
@@ -502,13 +518,16 @@
 
         const { text, blocks, shifts } = extractMath(source);
         const tokens = marked.lexer(text);
-        // Addresses starting "www." that GFM links by themselves open over
-        // https (GFM says http); and which top-level blocks hold HTML (the
-        // formulas' placeholders are comments, but ours). One block at a
-        // time: walkTokens joins arrays as it goes, slow on a long list.
+        // Bare addresses as GitHub links them; those starting "www." open
+        // over https (GFM says http); and which top-level blocks hold HTML
+        // (the formulas' placeholders are comments, but ours). One block at
+        // a time: walkTokens joins arrays as it goes, slow on a long list.
         const raw = tokens.map((top) => {
             let found = false;
             marked.walkTokens([top], (token) => {
+                // (a token's children are walked after it, so they see this)
+                if (token.tokens) unlinkBare(token.tokens);
+                if (token.type === 'table') token.header.concat(...token.rows).forEach((cell) => unlinkBare(cell.tokens));
                 if (token.type === 'link' && /^www\./i.test(token.raw)) token.href = 'https://' + token.raw;
                 else if (token.type === 'html' && !MATH_ONLY.test(token.raw)) found = true;
             });

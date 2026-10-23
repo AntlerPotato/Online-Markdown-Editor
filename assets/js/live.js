@@ -43,6 +43,8 @@
     const FENCE_OPEN = /^( {0,3})(`{3,}|~{3,})([^\n]*)/;
     const FENCE_LINE = /^ {0,3}(`{3,}|~{3,})[^`\n]*$/;
     const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
+    // One line between pipes ("| a | b |"), the last one not escaped
+    const TABLE_HEADER = /^ {0,3}\|.*(?<!\\)\|[ \t]*$/;
     const QUOTE_PREFIX = /^ {0,3}>[ \t]?(?:>[ \t]?)*/;
     const LIST_ITEM = /^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)(\[[ xX]\][ \t]+)?/;
     const TASK_MARK = /^[ \t>]*(?:[-*+]|\d{1,9}[.)])[ \t]+\[([ xX])\]/gm;
@@ -470,6 +472,17 @@
         return [lineOf(start), lineOf(end > start ? end - 1 : end)];
     }
 
+    // A block that opens a fence on its first line and never closes it:
+    // the fence that would close it (as long as the opening one), else null
+    function unclosedFence(source) {
+        const lines = source.split('\n');
+        const open = FENCE_LINE.exec(lines[0]);
+        if (!open) return null;
+        const mark = open[1];
+        const close = new RegExp(`^ {0,3}${mark[0] === '`' ? '`' : '~'}{${mark.length},}[ \\t]*$`);
+        return lines.slice(1).some((line) => close.test(line)) ? null : mark;
+    }
+
     function isMathBlock(source) {
         const s = source.trim();
         return s.length > 4 && s.startsWith('$$') && s.endsWith('$$') && s.includes('\n') && !s.slice(2, -2).includes('$$');
@@ -479,7 +492,8 @@
         if (!token) return { kind: isMathBlock(source) ? 'math' : 'paragraph' };
         switch (token.type) {
             case 'heading':
-                return { kind: 'heading', depth: token.depth };
+                // (its token gives the outline its text)
+                return { kind: 'heading', depth: token.depth, token };
             case 'code': {
                 if (token.codeBlockStyle === 'indented') return { kind: 'code' };
                 const lang = ((token.lang || '').trim().split(/\s+/)[0] || '').toLowerCase();
@@ -701,6 +715,8 @@
         let composing = false;
         let selfEdit = null;       // typing inside the active block: { from, to, length }
         let structural = false;    // rebuild at once, and swap editors if the block changed kind
+        let quiet = 0;             // following a change to the document (the caret didn't leave a block by itself)
+        let lastChange = null;     // the change update() was told of: { start, end, length } (null: not told)
         let suppressFocus = false;
         let ignoreFocus = false;
         let keyboardCaret = false; // the caret last moved by keyboard (typewriter scrolling)
@@ -861,6 +877,74 @@
 
         // --- Rebuilding -----------------------------------------------------
 
+        // Where the source block being edited is in the new text value
+        // (text is the one the blocks were made from), blank lines left out
+        function editedRange(value) {
+            const b = active;
+            let a = baseOf(b);
+            let z = b.gap ? b.pos : b.end;
+            if (text !== value) {
+                // The change as made (undo and redo don't say: the smallest one)
+                let { start: p, end, length } = lastChange || {};
+                if (lastChange === null) {
+                    const max = Math.min(text.length, value.length);
+                    p = 0;
+                    while (p < max && text[p] === value[p]) p++;
+                    let s = 0;
+                    while (s < max - p && text[text.length - 1 - s] === value[value.length - 1 - s]) s++;
+                    end = text.length - s;
+                    length = value.length - s - p;
+                }
+                if (p < a) a = end <= a ? a + length - (end - p) : p;
+                if (p <= z) z = end >= z ? p + length : z + length - (end - p);
+            }
+            while (a < z && value[a] === '\n') a++;
+            while (z > a && value[z - 1] === '\n') z--;
+            return [a, z];
+        }
+
+        // The document's blocks. A fence just typed in the source block
+        // being edited has no closing line yet, and everything after it
+        // would be code until Enter (or leaving the block) writes one: the
+        // text is split as if the block ended with it.
+        function splitDocument(value) {
+            const result = split(value);
+            if (!active || active.mode !== 'source' || text === null) return result;
+            const [a, z] = editedRange(value);
+            const fence = result.list.find((item) => item.start >= a && item.start < z && item.end > z
+                && item.token && item.token.type === 'code' && item.token.codeBlockStyle !== 'indented');
+            const open = fence && FENCE_OPEN.exec(value.slice(fence.start, z));
+            if (!open) return result;
+            const insert = '\n' + open[2];
+            const closed = split(value.slice(0, z) + insert + value.slice(z));
+            const back = (pos) => (pos <= z ? pos : Math.max(z, pos - insert.length));
+            closed.list.forEach((item) => {
+                item.start = back(item.start);
+                item.end = back(item.end);
+            });
+            return closed;
+        }
+
+        // A fence typed in a source block that is left before it was
+        // closed: its closing line goes into the document (an undo step of
+        // its own), so what follows doesn't turn into code. Not when the
+        // caret moves because the document changed (undo, a command).
+        // Returns where it went.
+        function closeOpenFence(b) {
+            if (quiet || !b || b.gap || b.mode !== 'source' || b.kind !== 'fence' || text !== editor.getValue()) return null;
+            const mark = unclosedFence(sourceOf(b));
+            if (!mark || !text.slice(b.end).trim()) return null;
+            const at = b.end;
+            const insert = '\n' + mark;
+            const sel = editor.getSelection();
+            const map = (pos) => (pos <= at ? pos : pos + insert.length);
+            const was = editing;
+            editing = false;   // (the caret is about to move anyway)
+            editor.replaceRange(at, at, insert, map(sel.start), map(sel.end), 'command');
+            editing = was;
+            return { at, length: insert.length };
+        }
+
         // Split the document again and update the DOM: unchanged blocks
         // (same hash) keep their element; the element being edited is kept
         // for whichever new block holds the caret, so typing never loses
@@ -869,8 +953,8 @@
             clearTimeout(rebuildTimer);
             rebuildTimer = 0;
             const value = editor.getValue();
+            const { list, links } = splitDocument(value);
             text = value;
-            const { list, links } = split(value);
             const nextDefs = definitions(links);
             const defsChanged = nextDefs !== defs;
             defs = nextDefs;
@@ -955,18 +1039,25 @@
                     scheduleRebuild();
                     return;
                 }
-                captureSelection();
-                rebuild();
-                if (editing) placeCaret();
+                settle();
             }, REBUILD_DELAY);
         }
 
         // Bring a pending rebuild forward (before moving between blocks)
         function flush() {
             if (!rebuildTimer || composing) return;
-            captureSelection();
-            rebuild();
-            if (editing) placeCaret();
+            settle();
+        }
+
+        function settle() {
+            quiet++;
+            try {
+                captureSelection();
+                rebuild();
+                if (editing) placeCaret();
+            } finally {
+                quiet--;
+            }
         }
 
         // Typing inside the active block: shift the offsets now, look at the
@@ -999,21 +1090,29 @@
             return true;
         }
 
-        // Called after every change to the document
-        function update() {
+        // Called after every change to the document (change: what it
+        // replaced, when the editor says)
+        function update(change = null) {
             if (!visible) return;
             const value = editor.getValue();
             const edit = selfEdit;
             selfEdit = null;
-            if (value !== text && !(edit && !structural && active && !active.gap && fastPath(edit, value))) {
-                // (not typing: the images under an image's source follow at once)
-                if (active && active.mode === 'source') active.ui.typing = false;
-                rebuild();
+            quiet++;
+            lastChange = change;
+            try {
+                if (value !== text && !(edit && !structural && active && !active.gap && fastPath(edit, value))) {
+                    // (not typing: the images under an image's source follow at once)
+                    if (active && active.mode === 'source') active.ui.typing = false;
+                    rebuild();
+                }
+                structural = false;
+                if (editing) placeCaret();
+                // Undo, a command: the "/" line may be gone
+                updateSlash(false);
+            } finally {
+                quiet--;
+                lastChange = null;
             }
-            structural = false;
-            if (editing) placeCaret();
-            // Undo, a command: the "/" line may be gone
-            updateSlash(false);
         }
 
         // --- Editors --------------------------------------------------------
@@ -1382,7 +1481,9 @@
 
         // The model changed under the open editor (typing, undo, a command)
         function refreshEditor(b) {
-            if (!b.gap && editorFor(b) !== b.mode && (structural || b.mode !== 'source') && !composing) {
+            // (a fence not closed yet stays in the source until it is)
+            const open = b.mode === 'source' && b.kind === 'fence' && unclosedFence(sourceOf(b));
+            if (!b.gap && editorFor(b) !== b.mode && (structural || b.mode !== 'source') && !composing && !open) {
                 mount(b);
                 return;
             }
@@ -1838,6 +1939,17 @@
             else if (key === 'ArrowDown') goToGap(text.length, blocks.length);
         }
 
+        // Backspace in the first cell of a row with nothing in it (not the
+        // header): the row goes, and the caret to the end of the row above
+        function deleteEmptyRow(b) {
+            const { r, c } = b.ui.cell;
+            const row = b.ui.parsed.rows[r];
+            if (r === 0 || c !== 0 || row.cells.some((cell) => cell.text.trim())) return;
+            const next = MDE.table.deleteRow(sourceOf(b), r);
+            const cells = MDE.table.parse(next).rows[r - 1].cells;
+            replaceTable(b, next, b.start + cells[Math.min(b.ui.parsed.cols, cells.length) - 1].to);
+        }
+
         // A list command in a cell: the markers go in front of each line of
         // the cell (lines split by <br>), as text; an empty cell gets
         // placeholder text, selected
@@ -1869,12 +1981,21 @@
             editor.replaceRange(from, to, pad + value + pad, start, end);
         }
 
+        // The start of the cell (r, c) of a table's source, or of the last
+        // cell its row has
+        function cellStart(source, r, c) {
+            const cells = MDE.table.parse(source).rows[r].cells;
+            return cells[Math.min(c, cells.length - 1)].from;
+        }
+
         // The table toolbar: align the caret's column, add a row below or a
-        // column to the right of its cell, or delete the table
+        // column to the right of its cell, delete its row (not the header)
+        // or its column (not the last one), or delete the table
         function tableCommand(name) {
             const b = active;
             if (!b || b.mode !== 'table' || !b.ui.cell) return;
             const { r, c } = b.ui.cell;
+            const { rows, cols } = b.ui.parsed;
             if (name === 'delete') {
                 removeBlock(b);
                 return;
@@ -1884,11 +2005,20 @@
             let next = source;
             let at = null;
             if (name === 'row') {
-                next = MDE.table.insertRow(source, r, b.ui.parsed.cols);
+                next = MDE.table.insertRow(source, r, cols);
                 at = MDE.table.parse(next).rows[r + 1].cells[c].from;
             } else if (name === 'column') {
                 next = MDE.table.insertColumn(source, c);
                 at = MDE.table.parse(next).rows[r].cells[c + 1].from;
+            } else if (name === 'delete-row') {
+                // The caret goes to the row that comes up (the one above after the last)
+                if (r === 0) return;
+                next = MDE.table.deleteRow(source, r);
+                at = cellStart(next, r < rows.length - 1 ? r : r - 1, c);
+            } else if (name === 'delete-column') {
+                if (cols < 2) return;
+                next = MDE.table.deleteColumn(source, c);
+                at = cellStart(next, r, c < cols - 1 ? c : c - 1);
             } else {
                 next = MDE.table.setAlign(source, c, name);
                 at = MDE.table.parse(next).rows[r].cells[c].from + offset;
@@ -1933,8 +2063,16 @@
         // Edit `target` instead of the current block. With `anchor`, the
         // target stays where it was on screen while the old block re-renders.
         function switchTo(target, anchor) {
-            const top = anchor ? target.el.getBoundingClientRect().top : 0;
             const prev = active;
+            if (prev && prev !== target) {
+                const closed = closeOpenFence(prev);
+                // (an empty line opened under it goes under the closing line)
+                if (closed && target.gap && target.pos >= closed.at) {
+                    target.pos += closed.length;
+                    target.index = countBefore(target.pos);
+                }
+            }
+            const top = anchor ? target.el.getBoundingClientRect().top : 0;
             active = target;
             if (prev && prev !== target) leave(prev);
             if (anchor) {
@@ -2137,7 +2275,8 @@
         function goToGap(pos, index) {
             if (!(active && active.gap && active.pos === pos)) switchTo(makeGap(pos, index));
             editing = true;
-            editor.select(pos, pos);
+            // (switchTo may have moved it: see closeOpenFence)
+            editor.select(active.pos, active.pos);
             applySelection();
         }
 
@@ -2193,6 +2332,7 @@
             flush();
             hideBubble();
             const b = active;
+            closeOpenFence(b);
             active = null;
             if (b) leave(b);
             editing = false;
@@ -2313,6 +2453,21 @@
                 }
             }
 
+            // "| 姓名 | 年龄 |" on a line of its own: Enter makes it the header
+            // of a table, with the delimiter line and an empty row (the
+            // caret in its first cell); one undo step gives the line back
+            if (b.kind === 'paragraph' && !soft && collapsed && start === value.length && TABLE_HEADER.test(value)) {
+                const header = MDE.table.parse(value).rows[0].cells;
+                if (header.some((cell) => cell.text.trim())) {
+                    const table = value.trimEnd() + '\n|' + '---|'.repeat(header.length) + '\n|' + '   |'.repeat(header.length);
+                    const at = base + MDE.table.parse(table).rows[1].cells[0].from;
+                    editing = true;
+                    structural = true;
+                    editor.replaceRange(base, base + value.length, table, at, at, 'command');
+                    return;
+                }
+            }
+
             // Tables get a new empty row
             if (b.kind === 'table' && collapsed && start === lineEnd && line.trim().startsWith('|')) {
                 const delimiter = value.split('\n')[1] || '';
@@ -2342,8 +2497,12 @@
             if (!sel || sel.start !== sel.end) return;
             if (backward ? sel.start !== 0 : sel.start !== b.ui.src.textContent.length) return;
             e.preventDefault();
-            // Cells are not joined
-            if (b.mode === 'table') return;
+            // Cells are not joined; Backspace at the start of an empty row
+            // takes the row out
+            if (b.mode === 'table') {
+                if (backward) deleteEmptyRow(b);
+                return;
+            }
             if (b.gap) {
                 const target = backward ? blocks[b.index - 1] : blocks[b.index];
                 if (target) enter(target, backward ? 'end' : 'start');
@@ -2981,6 +3140,16 @@
 
             stopEditing,
 
+            // The headings for the outline, from the blocks (as
+            // MDE.headingsOf has them); null while the blocks are behind
+            headings() {
+                if (!visible || text !== editor.getValue()) return null;
+                return blocks.filter((b) => b.kind === 'heading').map((b) => {
+                    const lineEnd = text.indexOf('\n', b.start);
+                    return { level: b.depth, start: b.start, end: lineEnd === -1 || lineEnd > b.end ? b.end : lineEnd, token: b.token };
+                });
+            },
+
             // Start (or go back to) editing where the document's caret is
             focus() {
                 if (!visible) return;
@@ -3058,7 +3227,8 @@
             tableState() {
                 const b = active;
                 if (!visible || !b || b.mode !== 'table' || !b.ui.cell || document.activeElement !== b.ui.src) return null;
-                return { el: b.el, td: b.ui.td, align: b.ui.parsed.align[b.ui.cell.c] || null };
+                const { r, c } = b.ui.cell;
+                return { el: b.el, td: b.ui.td, align: b.ui.parsed.align[c] || null, row: r, cols: b.ui.parsed.cols };
             },
             tableCommand(name) {
                 flush();

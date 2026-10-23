@@ -267,12 +267,20 @@
             });
         }
 
-        // The alignment of the caret's column (none shows as left)
+        // The alignment of the caret's column (none shows as left); no
+        // deleting the header row or the only column
         function paintTableBar() {
             tableBar.querySelectorAll('[data-table][aria-pressed]').forEach((el) => {
                 const align = el.dataset.table;
                 el.setAttribute('aria-pressed', String(table.align === align || (!table.align && align === 'left')));
             });
+            const can = (name, on, label, why) => {
+                const el = tableBar.querySelector(`[data-table="${name}"]`);
+                el.setAttribute('aria-disabled', String(!on));
+                el.setAttribute('aria-label', on ? label : `${label}（${why}）`);
+            };
+            can('delete-row', table.row !== 0, '删除行', '表头不能删除');
+            can('delete-column', table.cols > 1, '删除列', '只剩这一列');
         }
 
         function closedToolbar() {
@@ -326,7 +334,7 @@
         tableBar.addEventListener('mousedown', (e) => e.preventDefault());
         tableBar.addEventListener('click', (e) => {
             const button = e.target.closest('[data-table]');
-            if (button) live.tableCommand(button.dataset.table);
+            if (button && button.getAttribute('aria-disabled') !== 'true') live.tableCommand(button.dataset.table);
         });
         imageBar.addEventListener('mousedown', (e) => e.preventDefault());
         imageBar.addEventListener('click', (e) => {

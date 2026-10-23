@@ -26,9 +26,10 @@
         return text.replace(/(\$\$?)([^$\n]+?)\1/g, '$2').replace(/==([^=\n]+)==/g, '$1').replace(/\s+/g, ' ').trim();
     }
 
-    // { level, text, start, end (of its first line) } of every heading
-    function headingsOf(text) {
-        return MDE.headingsOf(text).map((h) => ({ level: h.level, text: label(h.token), start: h.start, end: h.end }));
+    // { level, text, start, end (of its first line) } of every heading;
+    // found: the headings live mode already has (MDE.headingsOf's shape)
+    function headingsOf(text, found = MDE.headingsOf(text)) {
+        return found.map((h) => ({ level: h.level, text: label(h.token), start: h.start, end: h.end }));
     }
 
     MDE.createOutline = function ({ nav, empty, onPick }) {
