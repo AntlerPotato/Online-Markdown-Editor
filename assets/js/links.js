@@ -10,6 +10,8 @@
     // As marked (GFM) finds them, less the punctuation it leaves out at the end
     const BARE = /(?:(?:ftp|https?):\/\/|www\.)(?:[a-zA-Z0-9-]+\.?)+[^\s<]*/iy;
     const BACKPEDAL = /(?:[^?!.,:;*_'"~()&]+|\([^)]*\)|&(?![a-zA-Z0-9]+;$)|[?!.,:;*_'"~)]+(?!$))+/;
+    // What may come before one, as GitHub has it (markdown.js has the same rule)
+    const bareAllowed = (url, before) => (/^www\./i.test(url) ? !before || /[ \t\n\r\f\v*_~(]/.test(before) : !/[A-Za-z]/.test(before));
     const ESCAPED = /\\([!-/:-@[-`{-~])/g;
     const SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^\s<>]*$/;
     // A reference definition, [label]: url "title", is not a link
@@ -128,7 +130,7 @@
             if (/[fhwFHW]/.test(ch)) {
                 BARE.lastIndex = i;
                 const m = BARE.exec(text);
-                if (m) {
+                if (m && bareAllowed(m[0], text[i - 1] || '')) {
                     let url = m[0];
                     let prev;
                     do {

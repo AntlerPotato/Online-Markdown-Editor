@@ -187,7 +187,7 @@
         scheduleStats();
         schedulePreview();
         scheduleOutline();
-        live.update();
+        live.update(change);
         annotate.changed(change);
         if (state.ready) scheduleSave();
     }
@@ -956,7 +956,9 @@
         const value = editor.getValue();
         if (value !== outlineText) {
             outlineText = value;
-            outline.render(MDE.outline.headingsOf(value));
+            // (live mode has the document in blocks already)
+            const found = state.view === 'live' ? live.headings() : null;
+            outline.render(found ? MDE.outline.headingsOf(value, found) : MDE.outline.headingsOf(value));
         }
         markOutline();
     }

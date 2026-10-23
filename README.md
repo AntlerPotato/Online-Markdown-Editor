@@ -8,18 +8,18 @@ A lightweight Markdown editor that runs entirely in the browser. Write in live m
 
 **Live mode (实时)**
 - The document is shown rendered; the block the caret is in shows its Markdown markers, keeping its size, weight and colour, and is rendered again as soon as the caret leaves it. In a list or a quote only the lines with the caret show their markers; the others keep their bullets, numbers and checkboxes
-- Click a block to edit it there; the arrow keys move between blocks. Enter starts a new paragraph (or continues a list or quote), Shift+Enter adds a line break, Esc stops editing
+- Click a block to edit it there; the arrow keys move between blocks. Enter starts a new paragraph (or continues a list or quote), Shift+Enter in the middle of a line breaks it there, Esc stops editing
 - Type `/` on an empty line (or click the **+** beside it) for a menu of blocks to insert — headings, lists, quote, table, code, formula, HTML, table of contents — filtered as you type, in Chinese, English or pinyin
 - Select text for a toolbar above it: bold, italic, strikethrough, highlight, inline code, inline formula, link, clear formatting, and **标注**
 - A handle beside each block: drag it to move the block, or click it for a menu (turn it into a paragraph, heading, quote, list or code block; insert below; copy; copy as Markdown; delete). Ctrl+Enter opens an empty line below the block being edited
-- Tables are edited cell by cell: Tab and Enter move between cells and add a row at the end, the arrow keys cross cell edges, and a toolbar above the table sets the column's alignment, inserts rows and columns, or deletes the table
+- Tables are edited cell by cell: Tab and Enter move between cells and add a row at the end, the arrow keys cross cell edges, Backspace at the start of an empty row removes it, and a toolbar above the table sets the column's alignment, inserts or deletes rows and columns, or deletes the table. A line like `| Name | Age |` becomes a table when you press Enter at its end
 - Click an image for a toolbar above it: align it left, centre or right, make it 50% or 100% of the text's width, replace it or delete it; drag its corners to set the width (in steps of 5%). An image with a width or alignment is written as HTML that GitHub also shows: `<img src="…" alt="…" width="50%">`, in `<p align="center">` when centred. Back at full width on the left it is `![…](…)` again
 - Hovering over a link, or putting the caret in it, shows a bubble to open, edit, copy or remove it; Ctrl+K edits the link the caret is in
 - Code blocks are edited in a code editor with line numbers; the language chip at its top left opens a searchable list of languages; formula blocks show a live preview under their LaTeX, and an inline formula shows one while the caret is in it
 - `html` code blocks run as web pages, in a frame sandboxed with only `allow-scripts`: their scripts work, but they can't reach the editor's page or its storage. A frame is made when it scrolls near the view and grows with its content (up to 80% of the view's height); its bottom-right corner has zoom (50–200%), full screen, **</>** to edit the code, and a grip to set the height by hand (double-click it to follow the content again). While the code is being edited, the 安全渲染 label says what the sandbox allows and 预览 shows the result under the code. The editor's colours are there as CSS variables (`var(--accent)`, `var(--text)` …) and follow the theme
 - Click a task's checkbox to tick it; Ctrl/⌘-click a link to open it
 - Blocks that render to nothing, such as reference definitions (`[id]: https://…`), show their source in grey
-- Typing `` ``` `` or `$$` on a line of its own and pressing Enter creates a code or formula block
+- Typing `` ``` `` or `$$` on a line of its own and pressing Enter creates a code or formula block. Until then what follows the `` ``` `` stays as it is, and leaving the line writes the closing `` ``` ``
 - 打字机 (typewriter) keeps the caret line in the middle of the screen; 专注 (focus) fades every block but the one being edited
 - Fast on long documents: only the edited block is re-rendered, rendered blocks are cached, and off-screen blocks skip layout
 
@@ -62,7 +62,7 @@ A lightweight Markdown editor that runs entirely in the browser. Write in live m
 | A fenced code block in `html` | The HTML, run in a sandboxed frame |
 | `<p align="center"><img src="…" width="50%"></p>` | An image half the text's width, centred (what the image toolbar writes) |
 
-Standard GitHub-flavoured Markdown (tables, fenced code, strikethrough, autolinks) works as usual. A single line break is kept as a line break.
+Standard GitHub-flavoured Markdown (tables, fenced code, strikethrough, autolinks) works as usual. A single line break is kept as a line break. Bare addresses are linked as on GitHub: everything up to the next space is part of the link (`https://a.com，然后` links `https://a.com，然后`, so leave a space after an address), and `www.` right after another character (`访问www.a.com`) is not a link.
 
 HTML written straight into the document (not in an `html` code block) is cleaned with [DOMPurify](https://github.com/cure53/DOMPurify) before it is shown: scripts, `onclick`-style attributes, `<style>`, forms, `<meta>` and `position: fixed` are taken out, and an `<iframe>` may only show another site (a video, a map), sandboxed. Links and images only get `http`, `https`, `mailto` and `tel` addresses (images also `data:`), in-page `#ids` and relative paths; a `javascript:` link stays plain text. For styled or interactive content, use an `html` code block.
 
@@ -137,7 +137,7 @@ assets/
     markdown.js         Markdown → HTML (marked renderer, math, TOC); cleans HTML in documents (DOMPurify) and unsafe link addresses
     syntax.js           Markdown syntax highlighting for the editor
     editor.js           Editor component: backdrop, caret tracking, undo/redo; holds the document for every view
-    table.js            Table text: cells, alignment, inserting rows and columns
+    table.js            Table text: cells, alignment, inserting and deleting rows and columns
     links.js            Links in Markdown text: finding, editing and removing them
     live.js             Live mode: splits the document into blocks, caches their HTML, edits one block at a time; images' width and alignment
     commands.js         Formatting commands (wrap, headings, lists, tables, links)

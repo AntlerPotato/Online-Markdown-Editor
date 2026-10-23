@@ -109,10 +109,34 @@
         }).join('\n');
     }
 
+    // Without rows[row] (a body row: row >= 1)
+    function deleteRow(source, row) {
+        const lines = source.split('\n');
+        lines.splice(row + 1, 1);
+        return lines.join('\n');
+    }
+
+    // Without column `col`, in every line that has it. A line without
+    // pipes at its ends gets them first, so a table left with one column
+    // is still a table.
+    function deleteColumn(source, col) {
+        return source.split('\n').map((line) => {
+            const { cells } = splitRow(line);
+            if (!cells[col]) return line;
+            // (a short row whose only cell goes keeps an empty one)
+            if (cells.length === 1) return line.slice(0, line.search(/\S/)) + '|' + NEW_CELL;
+            const first = line.search(/\S/);
+            if (line[first] !== '|') line = line.slice(0, first) + '| ' + line.slice(first);
+            if (!splitRow(line).trail) line = line.trimEnd() + ' |';
+            const cell = splitRow(line).cells[col];
+            return line.slice(0, cell.start) + line.slice(cell.end + 1);
+        }).join('\n');
+    }
+
     // Text typed or pasted into a cell: one line, pipes escaped
     function escapeCell(text) {
         return text.replace(/\r?\n/g, ' ').replace(/(?<!\\)\|/g, '\\|');
     }
 
-    MDE.table = { parse, padRow, setAlign, insertRow, insertColumn, escapeCell };
+    MDE.table = { parse, padRow, setAlign, insertRow, insertColumn, deleteRow, deleteColumn, escapeCell };
 })(window.MDE = window.MDE || {});
