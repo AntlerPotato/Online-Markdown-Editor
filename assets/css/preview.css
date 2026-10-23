@@ -730,6 +730,7 @@
 }
 
 .katex-display {
+    position: relative;
     overflow-x: auto;
     overflow-y: hidden;
     padding: 18px 0;
@@ -781,16 +782,63 @@
 /* --- Annotations -------------------------------------------------------------- */
 /* Annotated passages (CSS Custom Highlight API, from annotate.js): a tint
    and a line under them; the current one stronger. A number goes before
-   each passage. */
+   each passage. The line is just under the tint, like the canvas's 2px
+   border: the document fonts reach 0.24–0.27em under the baseline.
+   Headings have no room there (their line is about as tall as the text,
+   an h1's even a little shorter, and a live block cuts off what is
+   outside it), so their line is at the tint's bottom edge. The line goes
+   on under descenders (a solid line, like the border). html-frames.js
+   tints the text in HTML blocks the same way. */
 
 ::highlight(mde-ann) {
     background-color: var(--accent-soft);
     text-decoration: underline 2px var(--accent-mid);
+    text-decoration-skip-ink: none;
+    text-underline-offset: 0.26em;
 }
 
 ::highlight(mde-ann-current) {
     background-color: var(--accent-soft-strong);
     text-decoration: underline 2px var(--accent);
+    text-decoration-skip-ink: none;
+    text-underline-offset: 0.26em;
+}
+
+.markdown-preview :is(h1, h2, h3, h4, h5, h6, .lv-heading)::highlight(mde-ann),
+.markdown-preview :is(h1, h2, h3, h4, h5, h6, .lv-heading)::highlight(mde-ann-current) {
+    text-underline-offset: calc(0.22em - 2px);
+}
+
+/* A formula a passage reaches into: its text is KaTeX's hidden MathML, so
+   all of it is marked (a formula on a line of its own: its whole box) */
+.markdown-preview .katex.ann-math {
+    border-radius: 3px;
+    background-color: var(--accent-soft);
+    border-bottom: 2px solid var(--accent-mid);
+}
+
+.markdown-preview .katex-display.ann-math {
+    border-radius: 8px;
+    background-color: var(--accent-soft);
+    box-shadow: inset 0 -2px var(--accent-mid);
+}
+
+.markdown-preview .ann-math.ann-math-current {
+    background-color: var(--accent-soft-strong);
+    border-bottom-color: var(--accent);
+}
+
+.markdown-preview .katex-display.ann-math.ann-math-current {
+    box-shadow: inset 0 -2px var(--accent);
+}
+
+/* The number of a passage that starts in such a formula */
+.markdown-preview .katex-display .ann-mark.is-corner {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    margin: 0;
+    vertical-align: baseline;
 }
 
 .markdown-preview .ann-mark {

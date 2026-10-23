@@ -46,8 +46,8 @@ A lightweight Markdown editor that runs entirely in the browser. Write in live m
 - Live, source, split and preview views, with a draggable divider in the split view
 - An outline of the document's headings beside it, marking the section being edited (or read); click a heading to go to it
 - A command palette (`Ctrl+Shift+P`) with every command, found by its Chinese or English name or by pinyin
-- Annotations for revising with an AI: select text, choose **标注** on the selection toolbar (or `Ctrl+Alt+M`) and pick a phrase or write a note. Annotated text is tinted and numbered in the live view and the preview; the annotation panel lists them, and **复制全部标注** copies them all as text (section, line, the original Markdown and the change wanted) to paste into an AI chat. After copying, each one shows whether its text has changed since. Deleted ones stay in a history. Annotations are kept in the browser, never in the `.md` file
-- Typography settings: page width (presets, a slider, or drag the page's edges), Latin, Chinese and code fonts, and line spacing. A font is downloaded only once chosen; the settings are kept in the browser
+- Annotations for revising with an AI: select text, choose **标注** on the selection toolbar (or `Ctrl+Alt+M`) and pick a phrase or write a note. Annotated text is tinted, underlined and numbered in the live view and the preview (a formula is tinted as a whole, and text in HTML blocks is tinted inside their frames); the annotation panel lists them, and **复制全部标注** copies them all as text (section, line, the original Markdown and the change wanted) to paste into an AI chat. After copying, each one shows whether its text has changed since. When a revised document is pasted over the document, each annotation is looked for by its text: those whose text is gone show as changed (or deleted) instead of marking other text. Deleted ones stay in a history. Annotations are kept in the browser, never in the `.md` file
+- Typography settings: page width (presets, a slider, or drag the page's edges), Latin, Chinese and code fonts, and line spacing. A font is downloaded only once chosen; the settings are kept in the browser. With the annotation panel open, the settings open beside it when there is room
 - Light and dark themes; the status bar holds the block type (in live mode; the size of the selection while text is selected), the caret position, word and line count, reading time, the typewriter, focus and sync-scroll switches and the font size
 - Autosave in the browser, plus import and export of `.md` files. The save indicator next to the view switch names its state in its tooltip and stays expanded if saving fails
 
@@ -135,7 +135,7 @@ assets/
     typography.js       Typography settings (page width, fonts, line spacing), applied before the first paint
     sample.js           Document shown on first visit
     loader.js           Loads highlight.js and KaTeX on first use, checking their hashes
-    html-frames.js      HTML blocks: sandboxed frames, made near the view; height, zoom, full screen
+    html-frames.js      HTML blocks: sandboxed frames, made near the view; height, zoom, full screen, annotations' tint
     markdown.js         Markdown → HTML (marked renderer, math, TOC); cleans HTML in documents (DOMPurify) and unsafe link addresses
     syntax.js           Markdown syntax highlighting for the editor
     editor.js           Editor component: backdrop, caret tracking, undo/redo; holds the document for every view
