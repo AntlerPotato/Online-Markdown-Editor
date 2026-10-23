@@ -386,6 +386,16 @@
     box-shadow: inset 0 0 0 2px var(--accent);
 }
 
+/* Cells selected together (live.js "Selecting cells"); the open cell is
+   one of them and keeps its caret, but not the text a drag selects in it */
+.markdown-preview :is(td, th).is-picked {
+    background: var(--accent-soft);
+}
+
+.markdown-preview table.has-range .lv-cell::selection {
+    background: transparent;
+}
+
 /* Headers don't wrap (preview.css), and neither does their source */
 .markdown-preview th > .lv-cell {
     white-space: pre;

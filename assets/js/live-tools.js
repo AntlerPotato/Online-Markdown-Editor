@@ -267,8 +267,10 @@
             });
         }
 
-        // The alignment of the caret's column (none shows as left); no
-        // deleting the header row or the only column
+        // The alignment of the caret's column (none shows as left), or of
+        // the selected cells' columns when they share one; no deleting the
+        // header row or the only column (or all of them). With several
+        // rows or columns selected the delete buttons say how many.
         function paintTableBar() {
             tableBar.querySelectorAll('[data-table][aria-pressed]').forEach((el) => {
                 const align = el.dataset.table;
@@ -279,8 +281,11 @@
                 el.setAttribute('aria-disabled', String(!on));
                 el.setAttribute('aria-label', on ? label : `${label}（${why}）`);
             };
-            can('delete-row', table.row !== 0, '删除行', '表头不能删除');
-            can('delete-column', table.cols > 1, '删除列', '只剩这一列');
+            const range = table.range;
+            const rows = range ? range.rows : 1;
+            const columns = range ? range.columns : 1;
+            can('delete-row', (range ? range.top : table.row) !== 0, rows > 1 ? `删除 ${rows} 行` : '删除行', '表头不能删除');
+            can('delete-column', columns < table.cols, columns > 1 ? `删除 ${columns} 列` : '删除列', columns > 1 ? '不能删除所有列' : '只剩这一列');
         }
 
         function closedToolbar() {
