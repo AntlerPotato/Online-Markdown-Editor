@@ -6,6 +6,7 @@
 // text that is copied.
 (function (MDE) {
     const CONTEXT = 24;     // characters before a passage kept to tell repeats of its text apart
+    const REWRITE = 0.5;    // more of the document than this replaced by new text at once: a rewrite
 
     // --- Following the text --------------------------------------------------
 
@@ -61,9 +62,15 @@
     // again. Typing that goes on from a change to a passage's end (its
     // last words selected and typed over) stays in it: `typing` holds the
     // end of the passage the last change left the caret at.
+    // A rewrite (a revised document pasted over this one): a passage it
+    // reached is looked for in all of the new text, and one whose text
+    // isn't there any more is deleted, not put on whatever text took its
+    // place. Typing over a passage's own text still follows it.
     function follow(items, change, text) {
-        const delta = change.length - (change.end - change.start);
+        const removed = change.end - change.start;
+        const delta = change.length - removed;
         const caret = change.start + change.length;
+        const rewrite = change.length > 0 && removed > (text.length - delta) * REWRITE;
         items.forEach((item) => {
             const { from, to } = item;
             const typing = item.typing === to;
@@ -81,15 +88,29 @@
             }
             let a = moveEdge(from, change, false);
             let z = Math.max(a, moveEdge(to, change, true));
-            if (change.start < to && change.end > from && z === caret && a < z) item.typing = z;
-            const swallowed = change.start <= from && change.end >= to && change.end - change.start > to - from;
-            if ((a === z || swallowed) && item.quote && text.slice(a, z) !== item.quote) {
-                const lo = Math.min(a, change.start) - item.quote.length;
-                const hi = Math.max(z, change.start + change.length) + item.quote.length;
-                const found = search(text, item, lo, hi, a);
-                if (found !== -1) {
-                    a = found;
-                    z = found + item.quote.length;
+            const reached = change.start < to && change.end > from;
+            const within = from <= change.start && change.end <= to;
+            if (rewrite && (from === to || (reached && !within))) {
+                if (item.quote && text.slice(a, z) !== item.quote) {
+                    const found = search(text, item, 0, text.length, a);
+                    if (found !== -1) {
+                        a = found;
+                        z = found + item.quote.length;
+                    } else {
+                        z = a;
+                    }
+                }
+            } else {
+                if (reached && z === caret && a < z) item.typing = z;
+                const swallowed = change.start <= from && change.end >= to && removed > to - from;
+                if ((a === z || swallowed) && item.quote && text.slice(a, z) !== item.quote) {
+                    const lo = Math.min(a, change.start) - item.quote.length;
+                    const hi = Math.max(z, change.start + change.length) + item.quote.length;
+                    const found = search(text, item, lo, hi, a);
+                    if (found !== -1) {
+                        a = found;
+                        z = found + item.quote.length;
+                    }
                 }
             }
             item.from = a;
@@ -159,6 +180,12 @@
     const TABLE_DELIMITER = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/;
     const FENCE = /^ {0,3}(?:`{3,}|~{3,})/;
     const FENCE_CLOSE = /^ {0,3}(?:`{3,}|~{3,})[ \t]*$/;
+    // An HTML block's code, as its frame parses it: tags may run over lines
+    // and have > in quoted values; these elements' contents show no text
+    // (html-frames.js leaves out the same ones)
+    const FRAME_TAG = /<\/?([A-Za-z][^\s/>]*)(?:[^>"']|"[^"]*"|'[^']*')*>/y;
+    const FRAME_BOGUS = /<[!?][^>]*>/y;
+    const FRAME_HIDDEN = /^(?:script|style|template|title|textarea|select|noscript|iframe|object|noembed|noframes|xmp)$/i;
 
     function decode(m) {
         if (m[3]) return ENTITIES[m[3]] || null;
@@ -278,12 +305,52 @@
             }
         }
 
+        // An HTML block's frame: the text between the tags, without
+        // comments and what doesn't show as text
+        function frame(a, b) {
+            let i = a;
+            while (i < b) {
+                let m = null;
+                if (source.startsWith('<!--', i)) {
+                    const end = source.indexOf('-->', i + 4);
+                    i = end === -1 || end + 3 > b ? b : end + 3;
+                    continue;
+                }
+                if (source[i] === '<' && ((m = at(FRAME_BOGUS, i, b)) || (m = at(FRAME_TAG, i, b)))) {
+                    i += m[0].length;
+                    if (m[1] && m[0][1] !== '/' && FRAME_HIDDEN.test(m[1])) {
+                        // To its end tag (which the next turn skips)
+                        const close = new RegExp(`</${m[1]}[\\s/>]`, 'ig');
+                        close.lastIndex = i;
+                        const found = close.exec(source);
+                        i = found && found.index < b ? found.index : b;
+                    }
+                    continue;
+                }
+                const decoded = source[i] === '&' && (m = at(ENTITY, i, b)) && decode(m);
+                if (decoded) {
+                    keep(decoded, i);
+                    i += m[0].length;
+                    continue;
+                }
+                keep(source[i], i);
+                i++;
+            }
+        }
+
         switch (kind) {
             case 'hr':
             case 'def':
             case 'toc':
             case 'image':
                 break;
+            case 'frame': {
+                // (a fenced block: its code, between the fences)
+                const start = source.indexOf('\n') + 1;
+                const last = source.lastIndexOf('\n');
+                if (start > 0) frame(start, FENCE_CLOSE.test(source.slice(last + 1)) ? Math.max(start, last) : source.length);
+                break;
+            }
             case 'code':
                 plain(0, source.length);
                 break;

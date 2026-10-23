@@ -3,8 +3,9 @@
 // reach the editor's page or its storage). markdown.js writes a frame's
 // box with the source in data-source; the iframe is made once the box comes
 // near the view, and a small script put in front of the HTML tells the
-// editor how tall the content is, passes link clicks out and takes the
-// editor's colours and fonts. Bottom right: zoom, full screen, and a grip
+// editor how tall the content is, passes link clicks out, takes the
+// editor's colours and fonts and tints annotated passages in the frame's
+// text (annotate.js says which). Bottom right: zoom, full screen, and a grip
 // that sets the height by hand. Zoom and heights are kept for this visit
 // only, by the block's source.
 (function (MDE) {
@@ -18,7 +19,7 @@
     const CREATE_MARGIN = '200px 0px';
     const LINK_PROTOCOLS = /^(https?|mailto|tel):$/i;
     // Editor tokens handed to the frame, so its HTML can use var(--accent)…
-    const TOKENS = ['accent', 'accent-soft', 'accent-ring', 'on-accent', 'bg', 'surface', 'surface-sunken', 'surface-muted',
+    const TOKENS = ['accent', 'accent-soft', 'accent-soft-strong', 'accent-mid', 'accent-ring', 'on-accent', 'bg', 'surface', 'surface-sunken', 'surface-muted',
         'hover', 'hover-strong', 'pressed', 'border', 'border-strong', 'border-soft', 'text', 'text-strong', 'text-control',
         'text-body', 'text-soft', 'muted', 'faint', 'link', 'warm', 'number', 'danger', 'mark-bg', 'code-bg', 'code-border',
         'inline-code-bg', 'rule', 'font-doc', 'font-code'];
@@ -33,10 +34,47 @@
     };
 
     // Runs in the frame before its HTML: reports the content's height,
-    // takes style updates, sends link clicks (and Esc) out
+    // takes style updates, sends link clicks (and Esc) out, and tints the
+    // annotated passages it is sent (each one's text without white space
+    // and which occurrence of it; found again when the page changes). It
+    // leaves out the same elements as annotations.js's frame text.
     const HELPER = `(function () {
 var M = '${MSG}';
 function post(data) { data[M] = 1; parent.postMessage(data, '*'); }
+var marks = [];
+var HIDDEN = /^(script|style|template|title|textarea|select|noscript|iframe|object|noembed|noframes|xmp)$/i;
+function paint() {
+    if (typeof Highlight !== 'function' || !window.CSS || !CSS.highlights) return;
+    var all = new Highlight(), current = new Highlight();
+    current.priority = 1;
+    if (marks.length && document.body) {
+        var chars = [], nodes = [], offsets = [], node;
+        var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, { acceptNode: function (n) {
+            if (n.nodeType === 3) return NodeFilter.FILTER_ACCEPT;
+            return HIDDEN.test(n.localName) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
+        } });
+        while ((node = walker.nextNode())) {
+            for (var i = 0; i < node.data.length; i++) {
+                if (node.data[i].trim()) { chars.push(node.data[i]); nodes.push(node); offsets.push(i); }
+            }
+        }
+        var text = chars.join('');
+        marks.forEach(function (m) {
+            var at = -1;
+            for (var i = text.indexOf(m.text), k = 0; m.text && i !== -1 && k <= m.count; i = text.indexOf(m.text, i + 1), k++) at = i;
+            if (at === -1) return;
+            var last = at + m.text.length - 1;
+            var range = document.createRange();
+            range.setStart(nodes[at], offsets[at]);
+            range.setEnd(nodes[last], offsets[last] + 1);
+            (m.current ? current : all).add(range);
+        });
+    }
+    CSS.highlights.set('mde-ann', all);
+    CSS.highlights.set('mde-ann-current', current);
+}
+if (window.MutationObserver) new MutationObserver(function () { if (marks.length) paint(); }).observe(document.documentElement, { childList: true, characterData: true, subtree: true });
+document.addEventListener('DOMContentLoaded', function () { post({ type: 'ready' }); });
 var last = -1;
 function measure() {
     var root = document.documentElement;
@@ -56,6 +94,9 @@ addEventListener('message', function (e) {
         if (s) s.textContent = d.css;
         last = -1;
         measure();
+    } else if (d.type === 'marks') {
+        marks = d.marks || [];
+        paint();
     }
 });
 addEventListener('click', function (e) {
@@ -145,7 +186,10 @@ addEventListener('keydown', function (e) {
             + 'color:var(--text-body);background:transparent;-webkit-text-size-adjust:100%;overflow-wrap:break-word}'
             + ':where(body){margin:16px}'
             + ':where(a){color:var(--link)}'
-            + ':where(code,kbd,pre,samp){font-family:var(--font-code)}';
+            + ':where(code,kbd,pre,samp){font-family:var(--font-code)}'
+            // Annotated passages (as preview.css's)
+            + '::highlight(mde-ann){background-color:var(--accent-soft);text-decoration:underline 2px var(--accent-mid);text-decoration-skip-ink:none;text-underline-offset:0.26em}'
+            + '::highlight(mde-ann-current){background-color:var(--accent-soft-strong);text-decoration:underline 2px var(--accent);text-decoration-skip-ink:none;text-underline-offset:0.26em}';
     }
 
     function srcdoc(source, css) {
@@ -154,6 +198,25 @@ addEventListener('keydown', function (e) {
             + `<style id="mde-base">${css}</style>`
             + `<script>${HELPER}<\/script>`
             + `</head><body>${source}</body></html>`;
+    }
+
+    // --- Annotations' tint ------------------------------------------------------
+
+    // list: [{ text, count, current }] for the passages in the frame (their
+    // text without white space and how many times it shows before them, as
+    // annotations.js finds it); [] clears them. Sent once the frame's page
+    // is ready, and again when it is loaded anew.
+    function mark(el, list) {
+        const record = recordOf(el);
+        const json = JSON.stringify(list);
+        if (!record || record.marks === json) return;
+        record.marks = json;
+        sendMarks(record);
+    }
+
+    function sendMarks(record) {
+        if (!record.ready || !record.iframe || !record.el.isConnected) return;
+        record.iframe.contentWindow.postMessage({ [MSG]: 1, type: 'marks', marks: JSON.parse(record.marks) }, '*');
     }
 
     function sendStyle(record, page) {
@@ -241,7 +304,7 @@ addEventListener('keydown', function (e) {
 
     function setUp(el, scroller) {
         const source = el.dataset.source || '';
-        const record = { el, view: el.querySelector('.html-view'), iframe: null, key: el.dataset.key || keyOf(source), source, measured: null, css: '', scroller };
+        const record = { el, view: el.querySelector('.html-view'), iframe: null, key: el.dataset.key || keyOf(source), source, measured: null, css: '', scroller, ready: false, marks: '[]' };
         byElement.set(el, record);
         applyHeight(record);
         showZoom(record);
@@ -271,6 +334,7 @@ addEventListener('keydown', function (e) {
         record.key = el.dataset.key = key;
         record.source = el.dataset.source = source;
         if (record.iframe) {
+            record.ready = false;
             record.css = baseCss(el, zoomOf(key));
             record.iframe.srcdoc = srcdoc(source, record.css);
         }
@@ -339,6 +403,9 @@ addEventListener('keydown', function (e) {
             }
         } else if (data.type === 'key' && data.key === 'Escape' && expanded === record) {
             setExpanded(record, false);
+        } else if (data.type === 'ready') {
+            record.ready = true;
+            sendMarks(record);
         }
     });
 
@@ -526,6 +593,7 @@ addEventListener('keydown', function (e) {
         patch,
         update,
         estimate,
+        mark,
         configure(options) {
             Object.assign(config, options);
         }

@@ -1035,6 +1035,7 @@
                 liveTools.selection();
             }
             popover.update();
+            placeSettings();
             placeGuides();
         });
     }
@@ -1138,6 +1139,7 @@
         if (settingsPanel.hidden === !open) return;
         settingsPanel.hidden = !open;
         settingsButton.setAttribute('aria-expanded', String(open));
+        placeSettings();
         placeGuides();
         if (open) {
             showSettings();
@@ -1156,6 +1158,22 @@
         e.preventDefault();
         setSettingsOpen(false);
     });
+
+    // With the annotations panel open, the settings go left of it when
+    // both fit (10px apart, as wide as ever); otherwise they cover it
+    const SETTINGS_WIDTH = 356;    // (layout.css)
+    const SETTINGS_GAP = 10;
+    function placeSettings() {
+        let right = '';
+        if (!settingsPanel.hidden && annotate.isOpen() && !PHONE.matches) {
+            const card = settingsPanel.parentElement;
+            const left = card.getBoundingClientRect().left + card.clientLeft;
+            const panel = $('annotations').getBoundingClientRect();
+            if (panel.left - left >= SETTINGS_WIDTH + SETTINGS_GAP * 2) right = Math.round(left + card.clientWidth - panel.left + SETTINGS_GAP) + 'px';
+        }
+        settingsPanel.classList.toggle('is-beside', right !== '');
+        settingsPanel.style.right = right;
+    }
 
     // The page's edges and its width, while the settings are open (in live
     // mode and the preview, when there is room beside the page). The guides
@@ -1213,6 +1231,7 @@
 
     window.addEventListener('resize', () => {
         annotate.fit();
+        placeSettings();
         placeGuides();
     });
 
@@ -1626,6 +1645,7 @@
         NARROW.addEventListener('change', () => {
             updateOutline();
             annotate.fit();
+            placeSettings();
             placeGuides();
         });
     }

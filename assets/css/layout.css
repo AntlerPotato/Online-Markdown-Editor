@@ -1023,6 +1023,12 @@
     font-size: 13px;
 }
 
+/* Left of the open annotations panel when both fit (app.js sets `right`) */
+.settings-panel.is-beside {
+    left: auto;
+    width: 356px;
+}
+
 .settings-head {
     display: flex;
     align-items: center;

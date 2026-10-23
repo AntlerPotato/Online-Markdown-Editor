@@ -19,7 +19,7 @@
     const KEYS = /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? '⌘⌥M' : 'Ctrl+Alt+M';
     // Rendered parts whose text is not the document's (labels, line
     // numbers, KaTeX's drawing of a formula: its TeX is in the MathML; an
-    // HTML block's frame, whose text can't be reached)
+    // HTML block's frame, whose text the frame finds itself)
     const SKIP = '.code-block-head, .line-numbers, .katex-html, .toc, .ann-mark, .lv-raw, .lv-media, .html-block, script, style';
 
     const STATUS = { new: '未复制', gone: '原文已删除', same: '已复制 · 原文未改动', changed: '已复制 · 原文已改动' };
@@ -706,7 +706,9 @@
         // --- Marks in the document ---------------------------------------------------
         // The text is tinted with the CSS Custom Highlight API (the DOM is
         // left alone); a number goes before each passage, in the rendered
-        // blocks and the preview (not in the source being edited).
+        // blocks and the preview (not in the source being edited). A formula
+        // is tinted as a whole (by a class), and the text in an HTML block's
+        // frame by the frame itself.
 
         const marks = MARKS ? new Highlight() : null;
         const marksCurrent = MARKS ? new Highlight() : null;
@@ -779,17 +781,74 @@
             return badge;
         }
 
+        // A passage that starts in a formula: its number goes before the
+        // formula (one on a line of its own: on its top left)
         function addBadge(range, n) {
             const badge = newBadge(n);
-            const at = range.cloneRange();
-            at.collapse(true);
-            at.insertNode(badge);
-            range.setStartAfter(badge);
+            const formula = formulaOf(range.startContainer);
+            if (formula && formula.classList.contains('katex-display')) {
+                badge.classList.add('is-corner');
+                formula.prepend(badge);
+            } else if (formula) {
+                formula.before(badge);
+            } else {
+                const at = range.cloneRange();
+                at.collapse(true);
+                at.insertNode(badge);
+                range.setStartAfter(badge);
+            }
             return badge;
         }
 
-        // A passage that starts in an HTML block: the text in the frame
-        // can't be tinted, so its number goes on the frame's top left
+        // The formula a node is in: KaTeX's, all of it when it is on a line
+        // of its own
+        function formulaOf(node) {
+            const parent = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+            const katex = parent && parent.closest('.katex');
+            return katex ? katex.closest('.katex-display') || katex : null;
+        }
+
+        // A formula's text is KaTeX's MathML, which is hidden: a passage
+        // that reaches into a formula marks all of it (a class, see
+        // markFormulas), and the tint goes on the rest of the passage
+        function splitFormulas(range) {
+            const inside = formulaOf(range.commonAncestorContainer);
+            if (inside) return { paint: [], formulas: [inside] };
+            const common = range.commonAncestorContainer;
+            const scope = common.nodeType === Node.ELEMENT_NODE ? common : common.parentElement;
+            const formulas = [];
+            if (scope) {
+                scope.querySelectorAll('.katex').forEach((katex) => {
+                    const formula = katex.closest('.katex-display') || katex;
+                    if (range.intersectsNode(katex) && !formulas.includes(formula)) formulas.push(formula);
+                });
+            }
+            if (!formulas.length) return { paint: [range], formulas };
+            const paint = [];
+            const rest = document.createRange();
+            rest.setStart(range.startContainer, range.startOffset);
+            formulas.forEach((formula) => {
+                const piece = rest.cloneRange();
+                piece.setEndBefore(formula);
+                if (!piece.collapsed) paint.push(piece);
+                rest.setStartAfter(formula);
+            });
+            rest.setEnd(range.endContainer, range.endOffset);
+            if (!rest.collapsed) paint.push(rest);
+            return { paint, formulas };
+        }
+
+        // The tint of a passage's part in an HTML block: its text, which the
+        // frame's own script finds (html-frames.js)
+        function framePiece(entry, frame, id, source, from, to) {
+            const want = A.needle(visibleOf(source, 'frame'), from, to);
+            if (!frame || !want) return;
+            if (!entry.frames.has(frame)) entry.frames.set(frame, []);
+            entry.frames.get(frame).push({ id, text: want.text, count: want.count });
+        }
+
+        // A passage that starts in an HTML block: its number goes on the
+        // frame's top left (its text is in the frame)
         function frameMark(entry, frame, id, n) {
             const box = frame && frame.querySelector('.html-marks');
             if (!box) return;
@@ -806,13 +865,14 @@
                 badge.remove();
                 parent.normalize();
             });
+            entry.frames.forEach((pieces, frame) => MDE.htmlFrames.mark(frame, []));
         }
 
         const stillThere = (entry, root) => entry.nodes.every((node) => node.isConnected && root.contains(node));
 
         // Badges go in once every range of the element is known (they
-        // split text nodes); the nodes are kept to tell when the element
-        // was rendered again
+        // split text nodes); then the formulas are taken out of the tint.
+        // The nodes are kept to tell when the element was rendered again.
         function finishEntry(entry) {
             entry.ranges.forEach((mark) => {
                 if (mark.n && mark.range) {
@@ -820,8 +880,10 @@
                     entry.badges.push(mark.badge);
                 }
             });
-            entry.ranges.forEach(({ range }) => {
-                if (range) entry.nodes.push(range.startContainer, range.endContainer);
+            entry.ranges.forEach((mark) => {
+                if (!mark.range) return;
+                Object.assign(mark, splitFormulas(mark.range));
+                entry.nodes.push(mark.range.startContainer, mark.range.endContainer);
             });
             entry.badges.forEach((badge) => entry.nodes.push(badge));
             return entry;
@@ -831,11 +893,15 @@
         // its text (in a table, cell by cell; the open cell of the table
         // being edited is source, marked with the rest of the source)
         function markBlock(b, pieces, key) {
-            const entry = { key, source: b.source, ranges: [], badges: [], nodes: [] };
+            const entry = { key, source: b.source, ranges: [], badges: [], nodes: [], frames: new Map() };
+            // (rendered again in place, as when KaTeX arrives, its first
+            // node goes: a passage not found before is looked for again)
+            if (b.el.firstChild) entry.nodes.push(b.el.firstChild);
             const frame = b.mode === 'rendered' && b.el.querySelector(':scope > .html-block');
             if (frame) {
                 pieces.forEach((p) => {
                     if (p.first) frameMark(entry, frame, p.id, p.n);
+                    framePiece(entry, frame, p.id, b.source, p.from - b.start, p.to - b.start);
                 });
                 return finishEntry(entry);
             }
@@ -896,17 +962,21 @@
         }
 
         function markPreview(shown, key, text) {
-            const entry = { key, source: '', ranges: [], badges: [], nodes: [] };
+            const entry = { key, source: '', ranges: [], badges: [], nodes: [], frames: new Map() };
             const vis = documentVisible(text);
             const index = textIndex(preview);
             const frames = preview.querySelectorAll(':scope > .html-block');
             shown.forEach((o) => {
                 let n = o.n;
-                const k = vis.frames.findIndex((b) => b.start <= o.item.from && o.item.from < b.end);
-                if (k !== -1) {
-                    frameMark(entry, frames[k], o.item.id, n);
-                    n = 0;
-                }
+                const { from, to } = o.item;
+                vis.frames.forEach((b, k) => {
+                    if (b.end <= from || b.start >= to) return;
+                    if (b.start <= from) {
+                        frameMark(entry, frames[k], o.item.id, n);
+                        n = 0;
+                    }
+                    framePiece(entry, frames[k], o.item.id, text.slice(b.start, b.end), Math.max(from, b.start) - b.start, Math.min(to, b.end) - b.start);
+                });
                 const want = A.needle(vis, o.item.from, o.item.to);
                 const range = want && rangeAt(index, want);
                 if (range) entry.ranges.push({ id: o.item.id, range, n });
@@ -975,14 +1045,24 @@
             }
 
             const entries = Array.from(drawn.values()).concat(drawnPreview ? [drawnPreview] : []);
-            entries.forEach((entry) => entry.ranges.forEach(({ id, badge }) => {
-                if (badge) badge.classList.toggle('is-current', id === current);
-            }));
+            const formulas = new Map();
+            entries.forEach((entry) => {
+                entry.ranges.forEach(({ id, badge, formulas: reached }) => {
+                    if (badge) badge.classList.toggle('is-current', id === current);
+                    if (reached) reached.forEach((formula) => formulas.set(formula, formulas.get(formula) || id === current));
+                });
+                entry.frames.forEach((pieces, frame) => {
+                    MDE.htmlFrames.mark(frame, pieces.map((p) => ({ text: p.text, count: p.count, current: p.id === current })));
+                });
+            });
+            markFormulas(formulas);
             if (!MARKS) return;
             marks.clear();
             marksCurrent.clear();
-            const add = ({ id, range }) => {
-                if (range) (id === current ? marksCurrent : marks).add(range);
+            const add = ({ id, range, paint }) => {
+                const target = id === current ? marksCurrent : marks;
+                if (paint) paint.forEach((piece) => target.add(piece));
+                else if (range) target.add(range);
             };
             if (mode === 'live') {
                 drawn.forEach((entry) => entry.ranges.forEach(add));
@@ -991,15 +1071,33 @@
             if ((mode === 'preview' || mode === 'split') && drawnPreview) drawnPreview.ranges.forEach(add);
         }
 
+        // Formulas annotations reach into (element → whether the current
+        // one does): all of each is tinted, by a class
+        let formulasMarked = new Map();
+        function markFormulas(next) {
+            formulasMarked.forEach((was, formula) => {
+                if (!next.has(formula)) formula.classList.remove('ann-math', 'ann-math-current');
+            });
+            next.forEach((isCurrent, formula) => {
+                formula.classList.add('ann-math');
+                formula.classList.toggle('ann-math-current', isCurrent);
+            });
+            formulasMarked = next;
+        }
+
         // A click on a number in the document opens the panel at its
         // annotation; in the preview a click on a marked passage marks it
         function pick(e, entries) {
             const badge = e.target.closest('.ann-mark');
+            const formula = !badge && e.target.closest('.ann-math');
             let id = null;
             if (badge) {
                 const owner = entries().flatMap((entry) => entry.ranges).find((mark) => mark.badge === badge);
                 id = owner ? owner.id : null;
                 if (id && !open) setOpen(true);
+            } else if (formula) {
+                const owner = entries().flatMap((entry) => entry.ranges).find((mark) => mark.formulas && mark.formulas.includes(formula));
+                id = owner ? owner.id : null;
             } else if (document.caretRangeFromPoint || document.caretPositionFromPoint) {
                 const p = document.caretPositionFromPoint ? document.caretPositionFromPoint(e.clientX, e.clientY) : null;
                 const r = p ? null : document.caretRangeFromPoint(e.clientX, e.clientY);
