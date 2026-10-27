@@ -727,6 +727,7 @@
         let rebuildTimer = 0;
         let selectionFrame = 0;
         let slash = null;          // the slash menu is open for this block element: { el }
+        let roomBelow = 0;         // room kept in view under the caret's line (the slash menu on phones)
         let cellDrag = null;       // a press in the table being edited, until the button is let go (see "Selecting cells")
         let cellDragEnded = false; // …and just let go: the click that follows edits no other block
         const settings = { typewriter: false, focusMode: false, htmlPreview: false };
@@ -2551,18 +2552,20 @@
             return { top, bottom: top + b.ui.lineHeight };
         }
 
-        // Keep the caret in view; in typewriter mode keep it near the middle
+        // Keep the caret in view; in typewriter mode keep it near the middle.
+        // With room kept under its line (keepRoom), the line stays above that
+        // room, as far as the view is tall enough (up to 8px from its top).
         function revealCaret(center) {
             const rect = caretBox();
             if (!rect) return;
             const box = scroller.getBoundingClientRect();
-            if (center || (settings.typewriter && keyboardCaret)) {
-                scroller.scrollTop += (rect.top + rect.bottom) / 2 - (box.top + box.height * (center ? 0.4 : 0.45));
-                return;
-            }
             const margin = 32;
-            if (rect.top < box.top + margin) scroller.scrollTop -= box.top + margin - rect.top;
-            else if (rect.bottom > box.bottom - margin) scroller.scrollTop += rect.bottom - box.bottom + margin;
+            let by = 0;
+            if (center || (settings.typewriter && keyboardCaret)) by = (rect.top + rect.bottom) / 2 - (box.top + box.height * (center ? 0.4 : 0.45));
+            else if (rect.top < box.top + margin) by = rect.top - box.top - margin;
+            else if (rect.bottom > box.bottom - margin) by = rect.bottom - box.bottom + margin;
+            if (roomBelow) by = Math.max(by, rect.bottom - box.bottom + Math.min(roomBelow, box.height - 8 - (rect.bottom - rect.top)));
+            if (by) scroller.scrollTop += by;
         }
 
         // Enter a block from its neighbour; x keeps the caret's column when
@@ -3610,6 +3613,16 @@
                 if (auto && editor.getValue() === auto && textEditor(b) && document.activeElement === b.ui.src) editor.undo();
             },
             startSlash,
+
+            // Keep px of the view under the caret's line (0: stop): the
+            // slash menu on phones. The view scrolls now, and when it gets
+            // shorter (the on-screen keyboard); past the end of the
+            // document too, while the room is kept.
+            keepRoom(px) {
+                roomBelow = px;
+                scroller.style.paddingBottom = px ? px + 'px' : '';
+                if (px && editing && active) revealCaret();
+            },
 
             slashRect,
             selectionRect,

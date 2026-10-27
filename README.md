@@ -27,6 +27,8 @@ A lightweight Markdown editor that runs entirely in the browser. Write in live m
 **On phones**
 - A 60px top bar: the file menu, the file name and its save state, a switch between live and source, and a **⋯** menu with the other views, dark mode, the status bar's switches and font size, typography settings and the annotation panel
 - While a block is being edited, a row of buttons above the on-screen keyboard: insert a block (`/`), bold, italic, task list, link, undo, and hide the keyboard
+- The slash menu opens under the `/` and reaches down to that row at most (the rest scrolls in the menu); when the keyboard leaves too little room under the line, the text moves up to make room for a few options
+- In the source and split views the formatting tools have a row of their own; what doesn't fit goes into its **⋯** menu (on the narrowest phones undo, redo, paragraph style, bold and italic stay on the row)
 
 **Source editing**
 - Editor with line numbers, Markdown syntax highlighting and current-line highlight

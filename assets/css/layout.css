@@ -1627,6 +1627,12 @@
         border: 0;
     }
 
+    /* Closer groups: at 390px strikethrough and highlight stay on the row
+       (app.js moves what doesn't fit into "⋯") */
+    .toolbar .tb-sep {
+        margin: 0 3px;
+    }
+
     .brand-btn {
         width: 44px;
         height: 44px;
