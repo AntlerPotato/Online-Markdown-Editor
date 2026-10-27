@@ -12,6 +12,14 @@
     // Kinds of block shown as code-like source, where formatting makes no sense
     const PLAIN_KINDS = new Set(['code', 'html', 'def', 'hr']);
     const COARSE = window.matchMedia ? window.matchMedia('(pointer: coarse)') : { matches: false };
+    // A phone's touch screen: the quick bar and the on-screen keyboard under the text
+    const PHONE = window.matchMedia ? window.matchMedia('(max-width: 640px) and (pointer: coarse)') : { matches: false };
+    // On phones the view makes room under the "/" for three options of the
+    // slash menu and half of the fourth (so it shows that the rest
+    // scrolls); with less room the menu shrinks to one and a half before
+    // it goes over the "/" line
+    const SLASH_ROOM_OPTIONS = 3.5;
+    const SLASH_LEAST_OPTIONS = 1.5;
     const LINK_DELAY = 300;    // ms the mouse rests on a link before its bubble shows
     const LINK_LINGER = 200;   // ms the bubble stays after the mouse leaves (time to reach it)
 
@@ -60,6 +68,7 @@
         let index = 0;
         let slashAnchor = null;
         let lastQuery = null;
+        let slashRoom = false;  // just opened on a phone: room for it is still to be made
 
         // Show the options that match; the best match (its name starts with
         // the query, else one of its words does) is chosen first, so "/表"
@@ -101,18 +110,42 @@
             else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;
         }
 
+        // The height of the list down to option n, counting from 1 (3.5:
+        // halfway through the fourth), group labels included
+        function listHeightTo(n) {
+            const i = Math.min(Math.ceil(n), shown.length) - 1;
+            const option = shown[i];
+            if (!option) return 120;
+            const part = i === Math.ceil(n) - 1 ? n - i : 1;
+            return Math.round(option.offsetTop + option.offsetHeight * part + 6);
+        }
+
         // Under the "/" (above it when there is more room there), with the
-        // option icons lined up with it, and only as tall as the room allows
+        // option icons lined up with it, and only as tall as the room allows.
+        // On a phone it stays under the "/", down to the quick bar at most
+        // (the keyboard leaves little room above the "/" or below it): when
+        // it opens the view scrolls to leave room for a few options under
+        // the "/" line, and keeps it while the keyboard comes up.
         function placeSlash(panel) {
-            const r = live.slashRect();
+            let r = live.slashRect();
+            const phone = PHONE.matches;
+            if (phone && slashRoom && r) {
+                slashRoom = false;
+                live.keepRoom(listHeightTo(SLASH_ROOM_OPTIONS) + foot.offsetHeight + 2 + 16);
+                r = live.slashRect();
+            }
+            const least = phone ? listHeightTo(SLASH_LEAST_OPTIONS) : 120;
             panel.style.visibility = r ? '' : 'hidden';
             if (!r) return;
             const view = popover.viewport();
             const below = view.bottom - r.bottom - 16;
             const above = r.top - view.top - 16;
-            list.style.maxHeight = clamp(Math.max(below, above) - foot.offsetHeight - 2, 120, 520) + 'px';
+            list.style.maxHeight = clamp((phone ? below : Math.max(below, above)) - foot.offsetHeight - 2, least, 520) + 'px';
             const height = panel.offsetHeight;
-            const top = height <= below || below >= above ? r.bottom + 8 : r.top - height - 8;
+            // (on a phone, scrolled by hand until the room is too small: it
+            // stays above the quick bar, over the "/" line)
+            const top = phone ? Math.min(r.bottom + 8, view.bottom - 8 - height)
+                : height <= below || below >= above ? r.bottom + 8 : r.top - height - 8;
             const width = panel.offsetWidth;
             panel.style.left = clamp(r.left - 16, 8, document.documentElement.clientWidth - width - 8) + 'px';
             panel.style.top = Math.max(view.top + 8, top) + 'px';
@@ -124,6 +157,8 @@
                 slashAnchor.removeAttribute('aria-controls');
             }
             slashAnchor = null;
+            slashRoom = false;
+            live.keepRoom(0);
             live.dismissSlash();
             if (onSlashMenu) onSlashMenu(false);
         }
@@ -144,6 +179,7 @@
                 slashAnchor = el;
                 el.setAttribute('aria-controls', list.id);
                 list.scrollTop = 0;
+                slashRoom = true;
                 popover.open(slashMenu, el, { place: placeSlash, onClose: closedSlash });
                 if (onSlashMenu) onSlashMenu(true);
             } else {

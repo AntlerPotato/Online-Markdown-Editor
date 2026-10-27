@@ -791,7 +791,7 @@
         const atSelection = !fromToolbar && state.view === 'live' && !!live.selectionRect();
         // From the bubble of a link nobody was editing: no block opens
         linkDone = edit && !edit.editing ? () => live.stopEditing(true) : focusEditor;
-        const anchor = edit || replace || (el instanceof Element && (inlineToolbar.contains(el) || quickBar.contains(el))) ? el : button;
+        const anchor = edit || replace || (el instanceof Element && (inlineToolbar.contains(el) || quickBar.contains(el))) ? el : toolbarAnchor(button);
         popover.open(linkDialog, anchor, {
             rect: replace ? imageTop : edit ? edit.rect : atSelection ? () => live.selectionRect() : null,
             returnFocus: fromToolbar ? null : linkDone,
@@ -929,7 +929,7 @@
 
     function openTablePicker() {
         paintTable(table.rows, table.cols);
-        popover.open($('tablePicker'), $('tableButton'), {
+        popover.open($('tablePicker'), toolbarAnchor($('tableButton')), {
             onOpen: () => cellAt(table.rows, table.cols).focus()
         });
     }
@@ -1535,11 +1535,16 @@
     // ========================================================================
     // Toolbar overflow
     // When the toolbar's row runs out of room, the trailing groups of tools
-    // (marked data-group) move into the "more" menu, last group first. If
-    // that is still not enough, the toolbar scrolls.
+    // (marked data-group) move into the "more" menu, last group first; on a
+    // phone that can leave only undo, redo, paragraph style, bold and
+    // italic. If that is still not enough, the toolbar scrolls.
     // ========================================================================
 
-    const OVERFLOW_GROUPS = ['insert', 'list', 'block'];
+    const OVERFLOW_GROUPS = ['format', 'media', 'insert', 'list', 'block'];
+
+    // A dialog opened from a toolbar button that is in the "more" menu
+    // hangs under "⋯"
+    const toolbarAnchor = (button) => (button.hidden ? moreButton : button);
 
     function setOverflow(count) {
         const moved = OVERFLOW_GROUPS.slice(OVERFLOW_GROUPS.length - count);
