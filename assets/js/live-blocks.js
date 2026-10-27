@@ -80,7 +80,8 @@
         pointed.el.removeAttribute('id');
         handle.after(pointed.el);
 
-        let pointer = null;      // the mouse, while it is over the live view
+        let pointer = null;      // the mouse, while it is over the live view (frame: in this HTML block's frame)
+        let pageMoved = 0;       // when the page last heard of the mouse moving (performance.timeOrigin + timeStamp)
         let hovered = null;      // the block element under it
         let menuFrom = null;     // the handle whose menu is open
         let menuEditing = false; // a block was being edited when the menu opened
@@ -180,6 +181,17 @@
             pointer = null;
             schedule();
         });
+
+        // The mouse over the page again, outside the live view: it left the
+        // frame it was in (no pointerleave: the page didn't see it go in)
+        document.addEventListener('pointermove', (e) => {
+            if (e.pointerType !== 'mouse') return;
+            pageMoved = performance.timeOrigin + e.timeStamp;
+            if (pointer && pointer.frame && !scroller.contains(e.target)) {
+                pointer = null;
+                schedule();
+            }
+        }, { capture: true, passive: true });
 
         scroller.addEventListener('scroll', schedule, { passive: true });
         window.addEventListener('resize', schedule);
@@ -489,7 +501,18 @@
 
         return {
             // The blocks or the caret changed: place the handle again
-            refresh: schedule
+            refresh: schedule,
+            // The mouse moved in an HTML block's frame (at point, in the
+            // page), or out of it (null): the page itself hears nothing of
+            // the mouse in there (html-frames.js says). Not when the page
+            // heard of the mouse later (it has left the frame since).
+            pointAt(frameEl, point, time) {
+                if (!root.contains(frameEl) || (Number.isFinite(time) && time <= pageMoved)) return;
+                if (point) pointer = { x: point.x, y: point.y, frame: frameEl };
+                else if (pointer && pointer.frame === frameEl) pointer = null;
+                else return;
+                schedule();
+            }
         };
     };
 })(window.MDE = window.MDE || {});

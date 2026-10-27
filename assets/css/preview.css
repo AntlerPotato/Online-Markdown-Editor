@@ -514,6 +514,22 @@
     inset: -2px -3px -3px -2px;
 }
 
+/* (the box's round corner would cut an outline off) */
+.html-grip:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.html-grip:focus-visible::before {
+    border-radius: 3px 3px 6px 3px;
+    background: var(--accent-soft-strong);
+}
+
+/* Its code being edited (live mode), the frame waits there, hidden */
+.markdown-preview .html-block.is-parked {
+    display: none;
+}
+
 /* Numbers of the annotations inside (the frame's text can't be marked) */
 .html-marks {
     position: absolute;

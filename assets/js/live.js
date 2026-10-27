@@ -253,6 +253,9 @@
 
     // ```html: shown in a sandboxed frame (html-frames.js)
     const isHtml = (b) => b.kind === 'fence' && b.lang === 'html' && !!MDE.htmlFrames;
+    // Moving an element with moveBefore() doesn't load its frames again
+    // (Chrome and Edge 133+); elsewhere moved blocks are made anew
+    const CAN_MOVE = typeof Element.prototype.moveBefore === 'function';
 
     // ========================================================================
     // Image blocks: one ![…](…) per line, or one <img> written in HTML. The
@@ -828,15 +831,27 @@
         function renderBlock(b) {
             const source = sourceOf(b);
             const entry = entryFor(b);
+            const parked = b.parked;
+            b.parked = null;
             b.entry = entry;
             b.mode = 'rendered';
             b.ui = null;
             b.el.className = blockClass(b);
             b.el.style.containIntrinsicSize = `auto ${estimateHeight(b, source)}px`;
-            // Blocks that render to nothing (link definitions, comments) show their source
-            b.el.innerHTML = entry.html.trim() ? entry.html : `<div class="lv-raw">${markdown.escapeHtml(source)}</div>`;
+            if (parked && parked.html === entry.html && parked.frame.parentNode === b.el) {
+                // An HTML block whose code came back unchanged: its frame
+                // shows again as it was (its scripts didn't run again)
+                Array.from(b.el.childNodes).forEach((node) => {
+                    if (node !== parked.frame) node.remove();
+                });
+                parked.frame.classList.remove('is-parked');
+            } else {
+                // Blocks that render to nothing (link definitions, comments) show their source
+                b.el.innerHTML = entry.html.trim() ? entry.html : `<div class="lv-raw">${markdown.escapeHtml(source)}</div>`;
+            }
             if (b.ids) applyIds(b);
-            if (isHtml(b)) MDE.htmlFrames.attach(b.el, scroller);
+            // (an HTML block, or one in a list or a quote)
+            if (MDE.htmlFrames && entry.html.includes('class="html-block"')) MDE.htmlFrames.attach(b.el, scroller);
         }
 
         function createBlock(desc) {
@@ -994,22 +1009,53 @@
             const before = host !== -1 ? host : added.filter((d) => d.end < sel.start).length;
             const ref = oldEnd < old.length ? old[oldEnd].el : null;
 
+            // A block that only moved (dragged elsewhere, cut and pasted)
+            // keeps its element, so an HTML block's frame isn't loaded again
+            const reused = new Map();      // index in added → old block
+            if (CAN_MOVE && removed.length > 1) {
+                const pool = new Map();
+                removed.forEach((b) => {
+                    if (b === keep || b.gap) return;
+                    if (!pool.has(b.hash)) pool.set(b.hash, []);
+                    pool.get(b.hash).push(b);
+                });
+                added.forEach((d, k) => {
+                    const list = k !== host && pool.get(d.hash);
+                    const at = list ? list.findIndex((b) => b.kind === d.kind) : -1;
+                    if (at !== -1) reused.set(k, list.splice(at, 1)[0]);
+                });
+            }
+            const stays = new Set(reused.values());
+
             removed.forEach((b) => {
-                if (b !== keep) b.el.remove();
+                if (b !== keep && !stays.has(b)) b.el.remove();
             });
             if (active && !keep && removed.includes(active)) active = null;
 
             const created = added.map((d, k) => {
+                if (reused.has(k)) return Object.assign(reused.get(k), d);
                 if (k !== host) return createBlock(d);
                 // The edited element now shows this block
                 keep.gap = false;
                 Object.assign(keep, d);
                 return keep;
             });
-            created.forEach((b, k) => {
-                if (b === keep) return;
-                root.insertBefore(b.el, keep && k < before ? keep.el : ref);
-            });
+            // In place, from the last: the elements before the edited one go
+            // in front of it, the others in front of the blocks that follow
+            let follower = ref;
+            for (let k = created.length - 1; k >= 0; k--) {
+                const b = created[k];
+                if (keep && host === -1 && k === before - 1) follower = keep.el;
+                if (b === keep) {
+                    follower = keep.el;
+                    continue;
+                }
+                if (b.el.nextSibling !== follower || b.el.parentNode !== root) {
+                    if (stays.has(b)) root.moveBefore(b.el, follower);
+                    else root.insertBefore(b.el, follower);
+                }
+                follower = b.el;
+            }
 
             if (keep && host === -1) {
                 if (keep.mode === 'source') {
@@ -1414,7 +1460,7 @@
         function mountCode(b) {
             b.el.className = blockClass(b);
             b.el.style.containIntrinsicSize = '';
-            b.el.innerHTML = '<div class="code-block lv-code">'
+            const html = '<div class="code-block lv-code">'
                 + '<div class="code-block-head">'
                 + '<button type="button" class="lv-lang" aria-haspopup="listbox" aria-expanded="false" aria-controls="langList"><span class="lv-lang-name"></span>'
                 + '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>'
@@ -1426,23 +1472,36 @@
                 + '<div class="lv-code-area"><pre class="lv-code-view" aria-hidden="true"><code></code></pre>'
                 + '<textarea class="lv-code-input" wrap="off" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="代码"></textarea>'
                 + '</div></div></div>';
+            // An HTML block's frame stays in the page, hidden, after the code
+            // (removing an iframe unloads it)
+            const parked = b.parked && b.parked.frame;
+            if (parked && parked.parentNode === b.el) {
+                Array.from(b.el.childNodes).forEach((node) => {
+                    if (node !== parked) node.remove();
+                });
+                parked.insertAdjacentHTML('beforebegin', html);
+            } else {
+                b.parked = null;
+                b.el.innerHTML = html;
+            }
+            const block = b.el.querySelector('.lv-code');
             const ui = {
                 parts: partsOf(sourceOf(b)),
-                block: b.el.querySelector('.lv-code'),
-                lang: b.el.querySelector('.lv-lang'),
-                toggle: b.el.querySelector('.lv-html-toggle'),
+                block,
+                lang: block.querySelector('.lv-lang'),
+                toggle: block.querySelector('.lv-html-toggle'),
                 preview: null,     // the HTML block's frame under the code, when 预览 is on
                 previewTimer: 0,
-                input: b.el.querySelector('.lv-code-input'),
-                view: b.el.querySelector('.lv-code-view code'),
-                numbers: b.el.querySelector('.line-numbers'),
+                input: block.querySelector('.lv-code-input'),
+                view: block.querySelector('.lv-code-view code'),
+                numbers: block.querySelector('.line-numbers'),
                 lines: [],
                 text: '',
                 count: 0,
                 timer: 0
             };
             // The pill only explains; neither button takes focus from the code on a click
-            b.el.querySelector('.lv-safe').addEventListener('mousedown', (e) => e.preventDefault());
+            block.querySelector('.lv-safe').addEventListener('mousedown', (e) => e.preventDefault());
             ui.toggle.addEventListener('mousedown', (e) => e.preventDefault());
             ui.toggle.addEventListener('click', () => {
                 settings.htmlPreview = !settings.htmlPreview;
@@ -1480,6 +1539,11 @@
 
         function mount(b) {
             const type = b.gap ? 'source' : editorFor(b);
+            // An HTML block's frame waits, hidden, while its code is edited:
+            // the code back as it was, it shows again (see renderBlock)
+            const frame = type === 'code' && b.mode === 'rendered' && isHtml(b) && b.el.querySelector(':scope > .html-block');
+            b.parked = frame ? { frame, html: b.entry.html } : null;
+            if (frame) frame.classList.add('is-parked');
             if (type === 'code') mountCode(b);
             else if (type === 'math') mountMath(b);
             else if (type === 'table') mountTable(b);
