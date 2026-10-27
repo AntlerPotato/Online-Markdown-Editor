@@ -17,7 +17,7 @@ A lightweight Markdown editor that runs entirely in the browser. Write in live m
 - Click an image for a toolbar above it: align it left, centre or right, make it 50% or 100% of the text's width, replace it or delete it; drag its corners to set the width (in steps of 5%). An image with a width or alignment is written as HTML that GitHub also shows: `<img src="…" alt="…" width="50%">`, in `<p align="center">` when centred. Back at full width on the left it is `![…](…)` again
 - Hovering over a link, or putting the caret in it, shows a bubble to open, edit, copy or remove it; Ctrl+K edits the link the caret is in
 - Code blocks are edited in a code editor with line numbers; the language chip at its top left opens a searchable list of languages; formula blocks show a live preview under their LaTeX, and an inline formula shows one while the caret is in it
-- `html` code blocks run as web pages, in a frame sandboxed with only `allow-scripts`: their scripts work, but they can't reach the editor's page or its storage. A frame is made when it scrolls near the view and grows with its content (up to 80% of the view's height); its bottom-right corner has zoom (50–200%), full screen, **</>** to edit the code, and a grip to set the height by hand (double-click it to follow the content again). While the code is being edited, the 安全渲染 label says what the sandbox allows and 预览 shows the result under the code. The editor's colours are there as CSS variables (`var(--accent)`, `var(--text)` …) and follow the theme
+- `html` code blocks run as web pages, in a frame sandboxed with only `allow-scripts`: their scripts work, but they can't reach the editor's page or its storage. A frame is made when it scrolls near the view and grows with its content (up to 80% of the view's height); its bottom-right corner has zoom (50–200%), full screen, **</>** to edit the code, and a grip to set the height by hand (or Tab to it and press ↑ ↓; double-click it or press Home to follow the content again). While the code is being edited, the 安全渲染 label says what the sandbox allows and 预览 shows the result under the code; left unchanged, the frame comes back as it was, still running (what was typed in it stays). Dragging blocks around doesn't load frames again either (in Chrome and Edge). The editor's colours are there as CSS variables (`var(--accent)`, `var(--text)` …) and follow the theme
 - Click a task's checkbox to tick it; Ctrl/⌘-click a link to open it
 - Blocks that render to nothing, such as reference definitions (`[id]: https://…`), show their source in grey
 - Typing `` ``` `` or `$$` on a line of its own and pressing Enter creates a code or formula block. Until then what follows the `` ``` `` stays as it is, and leaving the line writes the closing `` ``` ``
@@ -38,7 +38,7 @@ A lightweight Markdown editor that runs entirely in the browser. Write in live m
 
 **Preview**
 - Math via KaTeX, code blocks via highlight.js (with line numbers and a copy button); both are downloaded only once a document contains a formula or a code block
-- `html` code blocks run in the same sandboxed frames; while you type in the split view, frames whose HTML didn't change keep running
+- `html` code blocks run in the same sandboxed frames; while you type in the split view, frames whose HTML didn't change keep running (in Chrome and Edge also those in lists and quotes)
 - `[TOC]` table of contents that marks the section you are reading
 - Synchronised scrolling between preview and source, anchored on headings
 
@@ -82,6 +82,7 @@ HTML written straight into the document (not in an `html` code block) is cleaned
 | Live mode: an empty line below the block | `Ctrl+Enter` | `⌘↩` |
 | Live mode: stop editing the block | `Esc` | `Esc` |
 | Live mode, in a table: select cells | `Shift`+click, or `Shift+←↑→↓` at the edge of a cell's text | `⇧`+click, or `⇧←↑→↓` |
+| HTML block's grip (focused with Tab): height 20px less / more, follow the content | `↑` / `↓`, `Home` | `↑` / `↓`, `Home` |
 
 ## Getting started
 
@@ -135,17 +136,17 @@ assets/
     typography.js       Typography settings (page width, fonts, line spacing), applied before the first paint
     sample.js           Document shown on first visit
     loader.js           Loads highlight.js and KaTeX on first use, checking their hashes
-    html-frames.js      HTML blocks: sandboxed frames, made near the view; height, zoom, full screen, annotations' tint
+    html-frames.js      HTML blocks: sandboxed frames, made near the view; height (the grip, with the keyboard too), zoom, full screen, annotations' tint; frames kept when the preview is rendered again
     markdown.js         Markdown → HTML (marked renderer, math, TOC); cleans HTML in documents (DOMPurify) and unsafe link addresses
     syntax.js           Markdown syntax highlighting for the editor
     editor.js           Editor component: backdrop, caret tracking, undo/redo; holds the document for every view
     table.js            Table text: cells, alignment, inserting and deleting rows and columns
     links.js            Links in Markdown text: finding, editing and removing them
-    live.js             Live mode: splits the document into blocks, caches their HTML, edits one block at a time; table cells (and selecting them), images' width and alignment
+    live.js             Live mode: splits the document into blocks, caches their HTML, edits one block at a time (moved blocks keep their elements); table cells (and selecting them), images' width and alignment
     commands.js         Formatting commands (wrap, headings, lists, tables, links)
     popover.js          Menu and popover positioning and keyboard handling
     live-tools.js       Live mode: slash menu, selection, table and image toolbars, link bubble, code language menu
-    live-blocks.js      Live mode: block handles, the block menu, dragging blocks
+    live-blocks.js      Live mode: block handles (also with the mouse in an HTML block's frame), the block menu, dragging blocks
     outline.js          The outline of headings beside the document
     palette.js          The command palette
     annotations.js      Annotations without the page: following passages through edits, finding them in rendered text, the copied text

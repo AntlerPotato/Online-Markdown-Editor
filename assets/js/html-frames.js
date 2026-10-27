@@ -3,11 +3,13 @@
 // reach the editor's page or its storage). markdown.js writes a frame's
 // box with the source in data-source; the iframe is made once the box comes
 // near the view, and a small script put in front of the HTML tells the
-// editor how tall the content is, passes link clicks out, takes the
-// editor's colours and fonts and tints annotated passages in the frame's
-// text (annotate.js says which). Bottom right: zoom, full screen, and a grip
-// that sets the height by hand. Zoom and heights are kept for this visit
-// only, by the block's source.
+// editor how tall the content is, passes link clicks out (and the mouse
+// going in or out), takes the editor's colours and fonts and tints
+// annotated passages in the frame's text (annotate.js says which). Bottom
+// right: zoom, full screen, and a grip that sets the height by hand (or
+// with ↑ ↓). Zoom and heights are kept for this visit only, by the block's
+// source. An iframe taken out of the page loads again, so frames are moved
+// only with moveBefore() (see patch, and live.js's rebuild).
 (function (MDE) {
     const MSG = 'mde-html-frame';
     const ZOOMS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
@@ -18,6 +20,10 @@
     const HEIGHTS_KEPT = 500;
     const CREATE_MARGIN = '200px 0px';
     const LINK_PROTOCOLS = /^(https?|mailto|tel):$/i;
+    const GRIP_STEP = 20;          // px per ↑ or ↓ on the grip
+    const POINTER_EVERY = 100;     // ms between the frame's reports of the mouse moving in it
+    // An iframe moved with moveBefore() doesn't load again (Chrome and Edge 133+)
+    const CAN_MOVE = typeof Element.prototype.moveBefore === 'function';
     // Editor tokens handed to the frame, so its HTML can use var(--accent)…
     const TOKENS = ['accent', 'accent-soft', 'accent-soft-strong', 'accent-mid', 'accent-ring', 'on-accent', 'bg', 'surface', 'surface-sunken', 'surface-muted',
         'hover', 'hover-strong', 'pressed', 'border', 'border-strong', 'border-soft', 'text', 'text-strong', 'text-control',
@@ -118,6 +124,25 @@ addEventListener('click', function (e) {
 addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && !e.defaultPrevented) post({ type: 'key', key: 'Escape' });
 });
+var moved = null, moveTimer = 0, moveSent = 0;
+function sendMove() {
+    moveTimer = 0;
+    moveSent = Date.now();
+    post({ type: 'pointer', inside: true, x: moved.x, y: moved.y, time: moved.time });
+}
+addEventListener('pointermove', function (e) {
+    if (e.pointerType !== 'mouse') return;
+    moved = { x: e.clientX, y: e.clientY, time: performance.timeOrigin + e.timeStamp };
+    var wait = ${POINTER_EVERY} - (Date.now() - moveSent);
+    if (wait <= 0) sendMove();
+    else if (!moveTimer) moveTimer = setTimeout(sendMove, wait);
+});
+addEventListener('pointerout', function (e) {
+    if (e.relatedTarget || e.pointerType !== 'mouse') return;
+    clearTimeout(moveTimer);
+    moveTimer = 0;
+    post({ type: 'pointer', inside: false, time: performance.timeOrigin + e.timeStamp });
+});
 })();`;
 
     const escapeHtml = (text) => String(text)
@@ -141,7 +166,7 @@ addEventListener('keydown', function (e) {
     const zooms = new Map();       // key → zoom
     const records = new Map();     // the frame's window → record
     const observers = new Map();   // scroller → IntersectionObserver
-    const config = { onOpen: null, onEdit: null };
+    const config = { onOpen: null, onEdit: null, onPointer: null };
     let expanded = null;           // the record shown over the window (no full-screen API)
 
     const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -163,7 +188,7 @@ addEventListener('keydown', function (e) {
             + '<span class="html-sep" aria-hidden="true"></span>'
             + button('fullscreen', '全屏查看', ICON.full)
             + '</div>'
-            + '<span class="html-grip" data-frame="grip" aria-hidden="true" title="拖动改变高度，双击恢复自动"></span>'
+            + `<span class="html-grip" data-frame="grip" role="separator" tabindex="0" aria-orientation="horizontal" aria-label="调整高度" aria-valuemin="${MIN_HEIGHT}" aria-valuemax="${MANUAL_MAX}" title="拖动或按 ↑ ↓ 改变高度，双击或按 Home 恢复自动"></span>`
             + '</div>';
     }
 
@@ -251,6 +276,13 @@ addEventListener('keydown', function (e) {
         const h = set != null ? set : clamp(measured != null ? measured : DEFAULT_HEIGHT, MIN_HEIGHT, maxHeight(record));
         const value = h + 'px';
         if (record.view.style.height !== value) record.view.style.height = value;
+        // The grip tells a screen reader the height (and that it follows the content)
+        const grip = record.grip;
+        const text = set != null ? `${h} 像素` : `${h} 像素（自动）`;
+        if (grip && grip.getAttribute('aria-valuetext') !== text) {
+            grip.setAttribute('aria-valuenow', String(h));
+            grip.setAttribute('aria-valuetext', text);
+        }
     }
 
     // Height of a frame not made yet (live.js's estimate for its block)
@@ -304,7 +336,7 @@ addEventListener('keydown', function (e) {
 
     function setUp(el, scroller) {
         const source = el.dataset.source || '';
-        const record = { el, view: el.querySelector('.html-view'), iframe: null, key: el.dataset.key || keyOf(source), source, measured: null, css: '', scroller, ready: false, marks: '[]' };
+        const record = { el, view: el.querySelector('.html-view'), grip: el.querySelector('.html-grip'), iframe: null, key: el.dataset.key || keyOf(source), source, measured: null, css: '', scroller, ready: false, marks: '[]' };
         byElement.set(el, record);
         applyHeight(record);
         showZoom(record);
@@ -341,10 +373,13 @@ addEventListener('keydown', function (e) {
     }
 
     // The preview, rendered again: the frames whose source didn't change
-    // stay (an iframe moved in the page would load again), in order, and
-    // the rest of the page is replaced around them
+    // stay, in order, and the rest of the page is replaced around them. An
+    // iframe taken out of the page loads again, so a frame in a list or a
+    // quote (rendered anew around it) is moved into the new one with
+    // moveBefore(); without it only the top-level frames stay.
     function patch(container, html) {
-        const old = Array.from(container.children).filter((node) => node.matches('.html-block.is-loaded'));
+        const inside = (node, parent) => CAN_MOVE || node.parentNode === parent;
+        const old = Array.from(container.querySelectorAll('.html-block.is-loaded')).filter((node) => inside(node, container));
         if (!old.length) {
             container.innerHTML = html;
             attach(container);
@@ -353,10 +388,10 @@ addEventListener('keydown', function (e) {
         const tpl = document.createElement('template');
         tpl.innerHTML = html;
         const fresh = Array.from(tpl.content.childNodes);
-        const reuse = new Map();
+        const reuse = new Map();       // new frame → old frame
         let from = 0;
-        fresh.forEach((node) => {
-            if (node.nodeType !== Node.ELEMENT_NODE || !node.matches('.html-block')) return;
+        const frames = Array.from(tpl.content.querySelectorAll('.html-block')).filter((node) => inside(node, tpl.content));
+        frames.forEach((node) => {
             for (let k = from; k < old.length; k++) {
                 if (old[k].dataset.key === node.dataset.key) {
                     reuse.set(node, old[k]);
@@ -365,15 +400,37 @@ addEventListener('keydown', function (e) {
                 }
             }
         });
-        const kept = new Set(reuse.values());
-        Array.from(container.childNodes).forEach((node) => {
-            if (!kept.has(node)) node.remove();
+        // Top-level frames that stay top-level (in order) don't move at all
+        const stay = new Map();
+        reuse.forEach((was, node) => {
+            if (node.parentNode === tpl.content && was.parentNode === container) stay.set(node, was);
         });
+        // …and frames that changed places with another find theirs too
+        if (CAN_MOVE) {
+            const used = new Set(reuse.values());
+            frames.forEach((node) => {
+                const was = !reuse.has(node) && old.find((o) => !used.has(o) && o.dataset.key === node.dataset.key);
+                if (!was) return;
+                reuse.set(node, was);
+                used.add(was);
+            });
+        }
+        const kept = new Set(stay.values());
+        const before = Array.from(container.childNodes);
         let ref = container.firstChild;
         fresh.forEach((node) => {
-            const same = reuse.get(node);
+            const same = stay.get(node);
             if (same) ref = same.nextSibling;
             else container.insertBefore(node, ref);
+        });
+        // (the old page is still there, so the frames move within the page)
+        reuse.forEach((was, node) => {
+            if (stay.has(node)) return;
+            node.parentNode.moveBefore(was, node);
+            node.remove();
+        });
+        before.forEach((node) => {
+            if (!kept.has(node) && node.parentNode === container) node.remove();
         });
         attach(container);
     }
@@ -406,6 +463,17 @@ addEventListener('keydown', function (e) {
         } else if (data.type === 'ready') {
             record.ready = true;
             sendMarks(record);
+        } else if (data.type === 'pointer' && config.onPointer && record.iframe) {
+            // The page hears nothing of the mouse over a frame: where it is
+            // (in the page's coordinates), or null when it left; and when
+            // that was (the time of the event, as performance.timeOrigin +
+            // timeStamp: the frame's messages come late)
+            let point = null;
+            if (data.inside && Number.isFinite(data.x) && Number.isFinite(data.y)) {
+                const r = record.iframe.getBoundingClientRect();
+                point = { x: r.left + clamp(data.x, 0, r.width), y: r.top + clamp(data.y, 0, r.height) };
+            }
+            config.onPointer(record.el, point, Number(data.time));
         }
     });
 
@@ -578,6 +646,25 @@ addEventListener('keydown', function (e) {
         e.preventDefault();
         manual.delete(record.key);
         applyHeight(record);
+    });
+
+    // The keyboard: ↑ ↓ move the grip 20px (from the height it has), Home
+    // goes back to following the content
+    document.addEventListener('keydown', (e) => {
+        const grip = e.target.closest && e.target.closest('.html-grip');
+        const record = grip && recordOf(grip.closest('.html-block'));
+        if (!record || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            const h = Math.round(record.view.getBoundingClientRect().height);
+            manual.set(record.key, clamp(h + (e.key === 'ArrowDown' ? GRIP_STEP : -GRIP_STEP), MIN_HEIGHT, MANUAL_MAX));
+        } else if (e.key === 'Home') {
+            manual.delete(record.key);
+        } else {
+            return;
+        }
+        e.preventDefault();
+        applyHeight(record);
+        grip.scrollIntoView({ block: 'nearest' });
     });
 
     // The view's height sets the frames' highest

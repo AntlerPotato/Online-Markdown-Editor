@@ -164,10 +164,12 @@
         toast: showToast,
         onLayout: () => relayout()
     });
-    // HTML blocks: links clicked in a frame open in a new tab; 编辑源码
+    // HTML blocks: links clicked in a frame open in a new tab; 编辑源码; the
+    // mouse going into a frame (the block handle goes beside its block)
     MDE.htmlFrames.configure({
         onOpen: (href) => window.open(href, '_blank', 'noopener'),
-        onEdit: (frame) => live.editFrame(frame)
+        onEdit: (frame) => live.editFrame(frame),
+        onPointer: (frame, point, time) => liveBlocks.pointAt(frame, point, time)
     });
 
     // ========================================================================
